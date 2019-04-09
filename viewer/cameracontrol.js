@@ -130,9 +130,10 @@ export class CameraControl {
                 // } else {
                 this.dragMode = DRAG_ORBIT;
                 let picked = this.viewer.pick({ canvasPos: [this.lastX, this.lastY], select: false });
-                for (const listener of this.viewer.selectionListeners) {
-                    listener(picked.object);
-                }
+                // Changed: selectionListeners raised only when visual item was selected (not rotate)
+                // for (const listener of this.viewer.selectionListeners) {
+                //     listener(picked.object);
+                // }
                 if (picked && picked.coordinates && picked.object) {
                     this.viewer.camera.center = picked.coordinates;
                 } else {
@@ -195,6 +196,10 @@ export class CameraControl {
                     });
                     if (viewObject && viewObject.object) {
                         console.log("Picked", viewObject.object);
+                        // Changed: selectionListeners raised only when visual item was selected (not rotate)
+                        for (const listener of this.viewer.selectionListeners) {
+                            listener(viewObject.object);
+                        }
                     }
                     this.viewer.drawScene();
                 }
