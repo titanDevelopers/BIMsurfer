@@ -36,15 +36,15 @@ export class CameraControl {
         };
 
         this.canvas.addEventListener("mousedown", this.canvasMouseDownHandler = (e) => {
-        	this.canvasMouseDown(e);
+            this.canvasMouseDown(e);
         });
 
         this.canvas.addEventListener("mouseup", this.canvasMouseUpHandler = (e) => {
-        	this.canvasMouseUp(e);
+            this.canvasMouseUp(e);
         });
 
         this.documentMouseUpHandler = (e) => {
-        	this.documentMouseUp(e);
+            this.documentMouseUp(e);
         };
         document.addEventListener("mouseup", this.documentMouseUpHandler);
 
@@ -59,11 +59,11 @@ export class CameraControl {
         });
 
         this.canvas.addEventListener("mousemove", this.canvasMouseMoveHandler = (e) => {
-        	this.canvasMouseMove(e);
+            this.canvasMouseMove(e);
         });
 
         this.canvas.addEventListener("wheel", this.canvasMouseWheelHandler = (e) => {
-        	this.canvasWheel(e);
+            this.canvasWheel(e);
         });
     }
 
@@ -121,55 +121,57 @@ export class CameraControl {
         this.mouseDownPos.set(this.mousePos);
 
         switch (e.which) {
-            case 1:                
-                if (e.ctrlKey) {
-                    this.mouseDownTime = 0;
-                    this.dragMode = DRAG_SECTION;
-                    this.viewer.startSectionPlane({canvasPos:[this.lastX, this.lastY]});                    
+            case 1:
+                // Changed: disable this mode
+                // if (e.ctrlKey) {
+                //     this.mouseDownTime = 0;
+                //     this.dragMode = DRAG_SECTION;
+                //     this.viewer.startSectionPlane({canvasPos:[this.lastX, this.lastY]});
+                // } else {
+                this.dragMode = DRAG_ORBIT;
+                let picked = this.viewer.pick({ canvasPos: [this.lastX, this.lastY], select: false });
+                // Changed: selectionListeners raised only when visual item was selected (not rotate)
+                // for (const listener of this.viewer.selectionListeners) {
+                //     listener(picked.object);
+                // }
+                if (picked && picked.coordinates && picked.object) {
+                    this.viewer.camera.center = picked.coordinates;
                 } else {
-                    this.dragMode = DRAG_ORBIT;
-                    let picked = this.viewer.pick({canvasPos:[this.lastX, this.lastY], select:false});
-                    for (const listener of this.viewer.selectionListeners) {
-                    	listener(picked.object);
-                    }
-                    if (picked && picked.coordinates && picked.object) {
-                        this.viewer.camera.center = picked.coordinates;
-                    } else {
-                        // Check if we can 'see' the previous center. If not, pick
-                        // a new point.
-                        let center_vp = vec3.transformMat4(vec3.create(), this.viewer.camera.center, this.viewer.camera.viewProjMatrix);
+                    // Check if we can 'see' the previous center. If not, pick
+                    // a new point.
+                    let center_vp = vec3.transformMat4(vec3.create(), this.viewer.camera.center, this.viewer.camera.viewProjMatrix);
 
-                        let isv = true;
-                        for (let i = 0; i < 3; ++i) {
-                            if (center_vp[i] < -1. || center_vp[i] > 1.) {
-                                isv = false;
-                                break;
-                            }
-                        }
-
-                        if (!isv) {
-                            let [x,y] = this.mousePos;
-                            vec3.set(center_vp, x / this.viewer.width * 2 - 1, - y / this.viewer.height * 2 + 1, 1.);
-                            vec3.transformMat4(center_vp, center_vp, this.camera.viewProjMatrixInverted);
-                            vec3.subtract(center_vp, center_vp, this.camera.eye);
-                            vec3.normalize(center_vp, center_vp);
-                            vec3.scale(center_vp, center_vp, this.getZoomRate() * 10.);
-                            vec3.add(center_vp, center_vp, this.camera.eye);
-                            console.log("new center", center_vp);
-                            this.viewer.camera.center = center_vp;
+                    let isv = true;
+                    for (let i = 0; i < 3; ++i) {
+                        if (center_vp[i] < -1. || center_vp[i] > 1.) {
+                            isv = false;
+                            break;
                         }
                     }
+
+                    if (!isv) {
+                        let [x, y] = this.mousePos;
+                        vec3.set(center_vp, x / this.viewer.width * 2 - 1, - y / this.viewer.height * 2 + 1, 1.);
+                        vec3.transformMat4(center_vp, center_vp, this.camera.viewProjMatrixInverted);
+                        vec3.subtract(center_vp, center_vp, this.camera.eye);
+                        vec3.normalize(center_vp, center_vp);
+                        vec3.scale(center_vp, center_vp, this.getZoomRate() * 10.);
+                        vec3.add(center_vp, center_vp, this.camera.eye);
+                        console.log("new center", center_vp);
+                        this.viewer.camera.center = center_vp;
+                    }
+                    // }
                 }
                 break;
             case 2:
-                this.dragMode = DRAG_PAN; 
+                this.dragMode = DRAG_PAN;
                 break;
             default:
                 break;
         }
         this.over = true;
         if (this.dragMode == DRAG_PAN) {
-        	e.preventDefault();
+            e.preventDefault();
         }
     }
 
@@ -186,13 +188,18 @@ export class CameraControl {
 
         switch (e.which) {
             case 1:
-            	if (dt < 500. && this.closeEnoughCanvas(this.mouseDownPos, this.mousePos)) {
+                if (dt < 500. && this.closeEnoughCanvas(this.mouseDownPos, this.mousePos)) {
                     var viewObject = this.viewer.pick({
                         canvasPos: this.mousePos,
-                        shiftKey: e.shiftKey
+                        // Changed: for multiselect is used Ctrl key
+                        shiftKey: e.ctrlKey
                     });
                     if (viewObject && viewObject.object) {
                         console.log("Picked", viewObject.object);
+                        // Changed: selectionListeners raised only when visual item was selected (not rotate)
+                        for (const listener of this.viewer.selectionListeners) {
+                            listener(viewObject.object);
+                        }
                     }
                     this.viewer.drawScene();
                 }
@@ -234,7 +241,7 @@ export class CameraControl {
             return;
         }
         if (this.mouseDown) {
-        	this.getCanvasPosFromEvent(e, this.mousePos);
+            this.getCanvasPosFromEvent(e, this.mousePos);
             var x = this.mousePos[0];
             var y = this.mousePos[1];
             var xDelta = (x - this.lastX);
@@ -244,10 +251,10 @@ export class CameraControl {
             if (this.dragMode == DRAG_ORBIT) {
                 let f = 0.5;
                 if (xDelta !== 0) {
-                	this.camera.orbitYaw(-xDelta * this.mouseOrbitSensitivity * f);
+                    this.camera.orbitYaw(-xDelta * this.mouseOrbitSensitivity * f);
                 }
                 if (yDelta !== 0) {
-                	this.camera.orbitPitch(yDelta * this.mouseOrbitSensitivity * f);
+                    this.camera.orbitPitch(yDelta * this.mouseOrbitSensitivity * f);
                 }
                 this.camera.orbitting = true;
             } else if (this.dragMode == DRAG_PAN) {
@@ -275,7 +282,7 @@ export class CameraControl {
      */
     cleanup() {
         var canvas = this.canvas;
-    	document.removeEventListener("mouseup", this.documentMouseUpHandler);
+        document.removeEventListener("mouseup", this.documentMouseUpHandler);
         canvas.removeEventListener("mousedown", this.canvasMouseDownHandler);
         canvas.removeEventListener("mouseup", this.canvasMouseUpHandler);
         document.removeEventListener("mouseup", this.documentMouseUpHandler);

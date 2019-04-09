@@ -1,22 +1,22 @@
 {
-  "name": "@krosas/bimsurfer3",
-  "version": "0.18.6",
-  "description": "BIMsurferV3",
-  "scripts": {
-    "remove-package": "del *.tgz",
-    "package": "npm pack && npm publish --access public && npm run remove-package"
-  },
-  "files": [
-    "viewer/"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "none"
-  },
-  "license": "AGPL-3.0",
-  "main": "viewer/bimserverviewer.js",
-  "directories": {
-    "doc": "docs"
-  },
-  "author": ""
+    "name": "@krosas/bimsurfer3",
+    "version": "0.18.7",
+    "description": "BIMsurferV3",
+    "scripts": {
+        "remove-package": "del *.tgz",
+        "package": "npm pack && npm publish --access public && npm run remove-package"
+    },
+    "files": [
+        "viewer/"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "none"
+    },
+    "license": "AGPL-3.0",
+    "main": "viewer/bimserverviewer.js",
+    "directories": {
+        "doc": "docs"
+    },
+    "author": ""
 }
