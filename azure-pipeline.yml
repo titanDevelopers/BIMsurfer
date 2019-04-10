@@ -1,0 +1,26 @@
+# Node.js with Angular
+# Build a Node.js project that uses Angular.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+
+trigger:
+- releases/titan
+
+pool:
+  name: Default
+  demands: npm
+
+steps:
+- task: Npm@1
+  displayName: 'npm pack'
+  inputs:
+    command: custom
+    verbose: false
+    customCommand: 'pack'
+
+- task: Npm@1
+  inputs:
+    command: publish
+    publishRegistry: useFeed
+    publishFeed: BimSurfer3
+  displayName: 'Publish to registry'
