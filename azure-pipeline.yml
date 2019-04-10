@@ -7,8 +7,7 @@ trigger:
 - releases/titan
 
 pool:
-  name: Default
-  demands: npm
+  name: Hosted
 
 steps:
 - task: Npm@1
