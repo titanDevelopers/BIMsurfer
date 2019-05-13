@@ -1,9 +1,9 @@
-import {BufferManagerTransparencyOnly} from './buffermanagertransparencyonly.js'
-import {BufferManagerPerColor} from './buffermanagerpercolor.js'
-import {Utils} from './utils.js'
-import {VertexQuantization} from './vertexquantization.js'
-import {RenderLayer} from './renderlayer.js'
-import {GpuBufferManager} from './gpubuffermanager.js'
+import {BufferManagerTransparencyOnly} from "./buffermanagertransparencyonly.js";
+import {BufferManagerPerColor} from "./buffermanagerpercolor.js";
+import {Utils} from "./utils.js";
+import {VertexQuantization} from "./vertexquantization.js";
+import {RenderLayer} from "./renderlayer.js";
+import {GpuBufferManager} from "./gpubuffermanager.js";
 
 /**
  * This is the default renderer for what we called the base layer. Usually this layer should be small enough to be rendered at good FPS
@@ -140,8 +140,9 @@ export class DefaultRenderLayer extends RenderLayer {
 
 			if (this.settings.quantizeVertices) {
 				if (!reuse) {
+					// Ruben 2019-04-26, I think this can be removed now...
 					// This is odd, it seems as though the reused shaders also need the vertexQuantizationMatrix, but it seems to work anyways... (same code in pickBuffers)
-					this.gl.uniformMatrix4fv(programInfo.uniformLocations.vertexQuantizationMatrix, false, this.viewer.vertexQuantization.inverseVertexQuantizationMatrixWithGlobalTransformation);
+//					this.gl.uniformMatrix4fv(programInfo.uniformLocations.vertexQuantizationMatrix, false, this.viewer.vertexQuantization.inverseVertexQuantizationMatrixWithGlobalTransformation);
 				}
 			}
 

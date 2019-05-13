@@ -76,16 +76,21 @@ export class CameraControl {
             canvasPos[0] = event.x;
             canvasPos[1] = event.y;
         } else {
-            var element = event.target;
+//            var element = event.target;
             var totalOffsetLeft = 0;
             var totalOffsetTop = 0;
-            while (element.offsetParent) {
-                totalOffsetLeft += element.offsetLeft;
-                totalOffsetTop += element.offsetTop;
-                element = element.offsetParent;
-            }
+//            while (element.offsetParent) {
+//                totalOffsetLeft += element.offsetLeft;
+//                totalOffsetTop += element.offsetTop;
+//                element = element.offsetParent;
+//            }
+            
+            var rect = event.target.getBoundingClientRect();
+            totalOffsetLeft = rect.left;
+            totalOffsetTop = rect.top;
             canvasPos[0] = event.pageX - totalOffsetLeft;
             canvasPos[1] = event.pageY - totalOffsetTop;
+            return [event.offsetX, event.offsetY];
         }
         return canvasPos;
     }
@@ -129,9 +134,6 @@ export class CameraControl {
                 } else {
                     this.dragMode = DRAG_ORBIT;
                     let picked = this.viewer.pick({canvasPos:[this.lastX, this.lastY], select:false});
-                    for (const listener of this.viewer.selectionListeners) {
-                    	listener(picked.object);
-                    }
                     if (picked && picked.coordinates && picked.object) {
                         this.viewer.camera.center = picked.coordinates;
                     } else {
@@ -168,7 +170,7 @@ export class CameraControl {
                 break;
         }
         this.over = true;
-        if (this.dragMode == DRAG_PAN) {
+        if (this.dragMode == DRAG_PAN || e.shiftKey) {
         	e.preventDefault();
         }
     }
@@ -263,6 +265,10 @@ export class CameraControl {
      */
     documentMouseUp(e) {
         this.mouseDown = false;
+    	// Potential end-of-pan
+        if (this.dragMode == DRAG_PAN) {
+        	this.camera.updateLowVolumeListeners();
+        }
     }
 
     getEyeLookDist() {

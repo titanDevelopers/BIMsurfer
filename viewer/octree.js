@@ -3,7 +3,7 @@ import * as mat3 from "./glmatrix/mat3.js";
 import * as vec3 from "./glmatrix/vec3.js";
 import * as vec4 from "./glmatrix/vec4.js";
 
-import {Utils} from './utils.js'
+import {Utils} from "./utils.js";
 
 /**
  * Octree implementation targeted towards being used in the TilingLayer, could possibly be retrofitted to be a generic Octree to be used in other contexts
@@ -100,10 +100,6 @@ class OctreeNode {
 	traverseBreathFirstInternal(fn, level) {
 		if (this.level == level) {
 			var result = fn(this);
-			if (result === false && toSkip != null) {
-				// TODO do something to make sure we are not calling fn for the children of this node
-				toSkip.add(this.id);
-			}
 		}
 		if (this.level >= level) {
 			return;

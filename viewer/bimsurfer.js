@@ -1,8 +1,8 @@
-import {BimServerViewer} from "./bimserverviewer.js"
+import {BimServerViewer} from "./bimserverviewer.js";
 import {EventHandler} from "./eventhandler.js";
 // @todo why?
-import {BimServerClient} from "http://localhost:8080/apps/bimserverjavascriptapi/bimserverclient.js"
-import {Stats} from "./stats.js"
+import {BimServerClient} from "http://localhost:8080/apps/bimserverjavascriptapi/bimserverclient.js";
+import {Stats} from "./stats.js";
 
 /**
  * Entry point for the public BimSurfer API.
@@ -70,6 +70,25 @@ export class BimSurfer extends EventHandler {
 		return this._bimServerViewer.loadModel(project);
 	}
 
+	/**
+	 * @private
+	 * @param {Object} project Project meta-data object
+	 * @param {HTMLElement} domNode The parent HTMLElement in which to create a CANVAS for WebGL rendering
+	 * @return
+	 * @memberof BimSurfer
+	 */
+	loadRevision(roid, domNode) {
+		var stats = new Stats();		
+		
+		this._bimServerViewer = new BimServerViewer(this._api, this.settings, domNode, null, null, stats);
+		
+		this._bimServerViewer.setProgressListener((percentage) => {
+			console.log(percentage + "% loaded")
+		});
+		
+		return this._bimServerViewer.loadRevisionByRoid(roid);
+	}
+
     /**
 	 * Loads a BIMserver project into the specified domNode for rendering.
 	 * 
@@ -79,14 +98,10 @@ export class BimSurfer extends EventHandler {
 	 */
 	load(params) {
 		return new Promise((resolve, reject) => {
-			this._api = new BimServerClient(params.bimserver);
-			this._api.init(() => {
-				this._api.login(params.username, params.password, () => {
-					this.loadProjects(params.roid).then((project)=>{                
-						this.loadModel(project, params.domNode).then(resolve).catch(reject);
-					}).catch(reject);
-				});
-			});
+			this._api = params.api;
+			this.loadProjects(params.roid).then((project)=>{                
+				this.loadModel(project, params.domNode).then(resolve).catch(reject);
+			}).catch(reject);
 		});
 	}
 	
@@ -223,5 +238,9 @@ export class BimSurfer extends EventHandler {
 	 */
 	addSelectedHandler(handler) {
 		this._bimServerViewer.addSelectionListener(handler);
+	}
+	
+	cleanup() {
+		this._bimServerViewer.cleanup();
 	}
 }
