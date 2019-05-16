@@ -76,14 +76,14 @@ export class CameraControl {
             canvasPos[0] = event.x;
             canvasPos[1] = event.y;
         } else {
-//            var element = event.target;
+            //            var element = event.target;
             var totalOffsetLeft = 0;
             var totalOffsetTop = 0;
-//            while (element.offsetParent) {
-//                totalOffsetLeft += element.offsetLeft;
-//                totalOffsetTop += element.offsetTop;
-//                element = element.offsetParent;
-//            }
+            //            while (element.offsetParent) {
+            //                totalOffsetLeft += element.offsetLeft;
+            //                totalOffsetTop += element.offsetTop;
+            //                element = element.offsetParent;
+            //            }
 
             var rect = event.target.getBoundingClientRect();
             totalOffsetLeft = rect.left;
@@ -139,7 +139,7 @@ export class CameraControl {
                     this.viewer.camera.center = picked.coordinates;
                 } else {
                     this.dragMode = DRAG_ORBIT;
-                    let picked = this.viewer.pick({canvasPos:[this.lastX, this.lastY], select:false});
+                    let picked = this.viewer.pick({ canvasPos: [this.lastX, this.lastY], select: false });
                     if (picked && picked.coordinates && picked.object) {
                         this.viewer.camera.center = picked.coordinates;
                     } else {
@@ -154,18 +154,18 @@ export class CameraControl {
                                 break;
                             }
                         }
-                    }
 
-                    if (!isv) {
-                        let [x, y] = this.mousePos;
-                        vec3.set(center_vp, x / this.viewer.width * 2 - 1, - y / this.viewer.height * 2 + 1, 1.);
-                        vec3.transformMat4(center_vp, center_vp, this.camera.viewProjMatrixInverted);
-                        vec3.subtract(center_vp, center_vp, this.camera.eye);
-                        vec3.normalize(center_vp, center_vp);
-                        vec3.scale(center_vp, center_vp, this.getZoomRate() * 10.);
-                        vec3.add(center_vp, center_vp, this.camera.eye);
-                        console.log("new center", center_vp);
-                        this.viewer.camera.center = center_vp;
+                        if (!isv) {
+                            let [x, y] = this.mousePos;
+                            vec3.set(center_vp, x / this.viewer.width * 2 - 1, - y / this.viewer.height * 2 + 1, 1.);
+                            vec3.transformMat4(center_vp, center_vp, this.camera.viewProjMatrixInverted);
+                            vec3.subtract(center_vp, center_vp, this.camera.eye);
+                            vec3.normalize(center_vp, center_vp);
+                            vec3.scale(center_vp, center_vp, this.getZoomRate() * 10.);
+                            vec3.add(center_vp, center_vp, this.camera.eye);
+                            console.log("new center", center_vp);
+                            this.viewer.camera.center = center_vp;
+                        }
                     }
                 }
                 // }
@@ -178,7 +178,7 @@ export class CameraControl {
         }
         this.over = true;
         if (this.dragMode == DRAG_PAN || e.shiftKey) {
-        	e.preventDefault();
+            e.preventDefault();
         }
     }
 
@@ -273,9 +273,9 @@ export class CameraControl {
      */
     documentMouseUp(e) {
         this.mouseDown = false;
-    	// Potential end-of-pan
+        // Potential end-of-pan
         if (this.dragMode == DRAG_PAN) {
-        	this.camera.updateLowVolumeListeners();
+            this.camera.updateLowVolumeListeners();
         }
     }
 
