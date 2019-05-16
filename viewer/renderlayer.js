@@ -1,15 +1,18 @@
 import * as mat4 from "./glmatrix/mat4.js";
 import * as vec3 from "./glmatrix/vec3.js";
 
-import {BufferTransformer} from './buffertransformer.js'
-import {Utils} from './utils.js'
-import {GeometryCache} from './geometrycache.js'
-import {FrozenBufferSet} from './frozenbufferset.js';
+import {BufferTransformer} from "./buffertransformer.js";
+import {Utils} from "./utils.js";
+import {GeometryCache} from "./geometrycache.js";
+import {FrozenBufferSet} from "./frozenbufferset.js";
 
 const selectionOutlineMatrix = mat4.create();
 const outlineColor = new Float32Array([1.0, 0.5, 0.0, 1.0]);
 const false_true = [false, true];
 const UINT32_MAX = (new Uint32Array((new Int32Array([-1])).buffer))[0];
+
+// Chache the extension availability
+let WEBGL_multi_draw = null;
 
 /**
  * Abstract base class for managing and rendering buffers pertaining
@@ -25,6 +28,7 @@ export class RenderLayer {
 		this.settings = viewer.settings;
 		this.viewer = viewer;
 		this.gl = viewer.gl;
+		WEBGL_multi_draw = this.gl.getExtension("WEBGL_multi_draw");
 		this.geometryDataToReuse = geometryDataToReuse;
 		this.geometryCache = new GeometryCache(this);
 		this.instanceSelectionData = new Uint32Array(128);
@@ -35,7 +39,7 @@ export class RenderLayer {
 	}
 
 	createGeometry(loaderId, roid, croid, geometryId, positions, normals, colors, color, indices, hasTransparency, reused) {
-		var bytesUsed = RenderLayer.calculateBytesUsed(this.settings, positions.length, colors.length, indices.length, normals.length);
+		var bytesUsed = Utils.calculateBytesUsed(this.settings, positions.length, colors.length, indices.length, normals.length);
 		var geometry = {
 				id: geometryId,
 				roid: roid,
@@ -66,35 +70,6 @@ export class RenderLayer {
 		return geometry;
 	}
 	
-	static calculateBytesUsed(settings, nrVertices, nrColors, nrIndices, nrNormals) {
-		var bytes = 0;
-		if (settings.quantizeVertices) {
-			bytes += nrVertices * 2;
-		} else {
-			bytes += nrVertices * 4;
-		}
-		if (nrColors != null) {
-			if (settings.quantizeColors) {
-				bytes += nrColors;
-			} else {
-				bytes += nrColors * 4;
-			}
-		}
-		// Pick buffers
-		bytes += (nrVertices / 3) * 4;
-		if (nrIndices < 65536 && settings.useSmallIndicesIfPossible) {
-			bytes += nrIndices * 2;
-		} else {
-			bytes += nrIndices * 4;
-		}
-		if (settings.quantizeNormals) {
-			bytes += nrNormals;
-		} else {
-			bytes += nrNormals * 4;
-		}
-		return bytes;
-	}
-
 	createObject(loaderId, roid, oid, objectId, geometryIds, matrix, normalMatrix, scaleMatrix, hasTransparency, type, aabb, gpuBufferManager, node) {
 		var loader = this.getLoader(loaderId);
 		var object = {
@@ -509,23 +484,24 @@ export class RenderLayer {
 			} else {
 				// These are the conventional buffersets
 				// TODO Ruben: For bigger models this results in out-of-memory (CPU), not sure why, but creating a new array here probably uses some memory
-				var ext = gl.getExtension("WEBGL_multi_draw");
-				if (ext) {
-					// This is available on Chrome Canary 75
-					const visibleRanges = buffer.computeVisibleRangesAsBuffers(visibleElements, this.gl);
-					if (visibleRanges && visibleRanges.pos > 0) {
-						// TODO add buffer.nrTrianglesToDraw code
-						if (visibleRanges.offsetsBytes == null) {
-							visibleRanges.offsetsBytes = new Int32Array(visibleRanges.pos);
-							for (var i=0; i<visibleRanges.pos; i++) {
-								visibleRanges.offsetsBytes[i] = visibleRanges.offsets[i] * 4;
-							}
+				const visibleRanges = buffer.computeVisibleRangesAsBuffers(visibleElements, this.gl);
+				if (visibleRanges && visibleRanges.pos > 0) {
+					// TODO add buffer.nrTrianglesToDraw code
+					if (visibleRanges.offsetsBytes == null) {
+						visibleRanges.offsetsBytes = new Int32Array(visibleRanges.pos);
+						for (var i=0; i<visibleRanges.pos; i++) {
+							visibleRanges.offsetsBytes[i] = visibleRanges.offsets[i] * 4;
 						}
-						ext.multiDrawElementsWEBGL(this.gl.TRIANGLES, visibleRanges.counts, 0, this.gl.UNSIGNED_INT, visibleRanges.offsetsBytes, 0, visibleRanges.pos);
 					}
-				} else {
-					for (var range of buffer.computeVisibleRanges(visibleElements, this.gl)) {
-						this.gl.drawElements(this.gl.TRIANGLES, Math.min(range[1] - range[0], buffer.nrTrianglesToDraw * 3), this.gl.UNSIGNED_INT, range[0] * 4);
+
+					if (WEBGL_multi_draw) {
+						// This is available on Chrome Canary 75					
+						WEBGL_multi_draw.multiDrawElementsWEBGL(this.gl.TRIANGLES, visibleRanges.counts, 0, this.gl.UNSIGNED_INT, visibleRanges.offsetsBytes, 0, visibleRanges.pos);
+					} else {
+						// A manual loop using the same range data
+						for (let i = 0; i < visibleRanges.pos; ++i) {
+							this.gl.drawElements(this.gl.TRIANGLES, visibleRanges.counts[i], this.gl.UNSIGNED_INT, visibleRanges.offsetsBytes[i]);
+						}
 					}
 				}
 			}
@@ -712,6 +688,8 @@ export class RenderLayer {
 		}
 
 		let viewer = bufferManager.viewer;
+
+		var gl = this.gl;
 
 		for (let transparency of false_true) { 
 			for (let reuse of false_true) {

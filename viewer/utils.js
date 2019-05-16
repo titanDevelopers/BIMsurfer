@@ -100,7 +100,6 @@ export class Utils {
 
 		const b = gl.createBuffer();
 		gl.bindBuffer(bufferType, b);
-		var js_type = js_type ? js_type : zeroDataView.constructor.name;
 		const byteCount = numElements * window[js_type].BYTES_PER_ELEMENT;
 		
 		// Read the WebGL documentation carefully on this, the interpretation of the size argument depends on the type of "data"
@@ -178,5 +177,53 @@ export class Utils {
 			newMap.set(oid, inputMap.get(oid));
 		}
 		return newMap;
+	}
+
+	static request(options) {
+		return new Promise(function (resolve, reject) {
+			var xhr = new XMLHttpRequest();
+			xhr.open(options.method || "GET", options.url);
+			if (options.binary) {
+				xhr.responseType = "arraybuffer";
+			}
+			xhr.onload = function () {
+				if (this.status >= 200 && this.status < 300) {
+					resolve(xhr.response);
+				} else {
+					reject();
+				}
+			};
+			xhr.onerror = reject;
+			xhr.send(null);
+		});
+	}
+	
+	static calculateBytesUsed(settings, nrVertices, nrColors, nrIndices, nrNormals) {
+		var bytes = 0;
+		if (settings.quantizeVertices) {
+			bytes += nrVertices * 2;
+		} else {
+			bytes += nrVertices * 4;
+		}
+		if (nrColors != null) {
+			if (settings.quantizeColors) {
+				bytes += nrColors;
+			} else {
+				bytes += nrColors * 4;
+			}
+		}
+		// Pick buffers
+		bytes += (nrVertices / 3) * 4;
+		if (nrIndices < 65536 && settings.useSmallIndicesIfPossible) {
+			bytes += nrIndices * 2;
+		} else {
+			bytes += nrIndices * 4;
+		}
+		if (settings.quantizeNormals) {
+			bytes += nrNormals;
+		} else {
+			bytes += nrNormals * 4;
+		}
+		return bytes;
 	}
 }

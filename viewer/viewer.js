@@ -1,18 +1,19 @@
 import * as mat4 from "./glmatrix/mat4.js";
 import * as vec3 from "./glmatrix/vec3.js";
 
-import {ProgramManager} from './programmanager.js'
-import {Lighting} from './lighting.js'
-import {BufferSetPool} from './buffersetpool.js'
-import {Camera} from './camera.js'
-import {CameraControl} from './cameracontrol.js'
-import {RenderBuffer} from './renderbuffer.js'
-import {SvgOverlay} from './svgoverlay.js'
-import {FrozenBufferSet} from './frozenbufferset.js'
-import {Utils} from './utils.js'
-import {SSQuad} from './ssquad.js'
-import {FreezableSet} from './freezableset.js';
-import {DefaultCss} from './defaultcss.js';
+import {ProgramManager} from "./programmanager.js";
+import {Lighting} from "./lighting.js";
+import {BufferSetPool} from "./buffersetpool.js";
+import {Camera} from "./camera.js";
+import {CameraControl} from "./cameracontrol.js";
+import {RenderBuffer} from "./renderbuffer.js";
+import {SvgOverlay} from "./svgoverlay.js";
+import {FrozenBufferSet} from "./frozenbufferset.js";
+import {Utils} from "./utils.js";
+import {SSQuad} from "./ssquad.js";
+import {FreezableSet} from "./freezableset.js";
+import {DefaultCss} from "./defaultcss.js";
+import {DefaultColors} from "./defaultcolors.js";
 
 import {COLOR_FLOAT_DEPTH_NORMAL, COLOR_ALPHA_DEPTH} from './renderbuffer.js';
 import { WSQuad } from './wsquad.js';
@@ -46,6 +47,8 @@ export class Viewer {
         this.height = height;
 
         new DefaultCss().apply(canvas);
+        
+        this.defaultColors = settings.defaultColors ? settings.defaultColors : DefaultColors;
         
         this.stats = stats;
         this.settings = settings;
@@ -84,7 +87,7 @@ export class Viewer {
         
         this.selectionListeners = [];
         
-        this.renderLayers = [];
+        this.renderLayers = new Set();
         this.animationListeners = [];
         this.colorRestore = [];
         this.geometryIdToBufferSet = new Map();
@@ -118,7 +121,9 @@ export class Viewer {
         var self = this;
 //        window._debugViewer = this;  // HACK for console debugging
 
-        document.addEventListener("keypress", (evt) => {
+        // Tabindex required to be able add a keypress listener to canvas
+        canvas.setAttribute("tabindex", "0");
+        canvas.addEventListener("keypress", (evt) => {
             if (evt.key === 'H') {
                 this.resetVisibility();
             } else if (evt.key === 'h') {
@@ -178,8 +183,13 @@ export class Viewer {
             for (let e of elems) {
                 fn(e);
             }
+            
             this.dirty = true;
             return Promise.resolve();
+        }).then(() => {
+        	for (const listener of this.selectionListeners) {
+        		listener(this.selectedElements);
+        	}
         });
     }
 
@@ -198,7 +208,9 @@ export class Viewer {
     resetColorAlreadyBatched(elems, bufferSetsToUpdate) {
     	for (let [bufferSetId, bufferSetObject] of bufferSetsToUpdate) {
     		var bufferSet = bufferSetObject.bufferSet;
-    		bufferSet.batchGpuRead(this.gl, bufferSetObject.oids, () => {
+			let id_ranges = bufferSet.getIdRanges(elems);
+			let bounds = bufferSet.getBounds(id_ranges);
+    		bufferSet.batchGpuRead(this.gl, ["positionBuffer", "normalBuffer", "colorBuffer", "pickColorBuffer"], bounds, () => {
 	    		for (let objectId of bufferSetObject.oids) {
 	    			if (this.hiddenDueToSetColor.has(objectId)) {
 	    				this.invisibleElements.delete(objectId);
@@ -258,8 +270,11 @@ export class Viewer {
 				for (let [bufferSetId, bufferSetObject] of bufferSetsToUpdate) {
 					var bufferSet = bufferSetObject.bufferSet;
 					var oids = bufferSetObject.oids;
-					console.log("Updating " + oids.length);
-					bufferSet.batchGpuRead(this.gl, bufferSetObject.oids, () => {
+
+					let id_ranges = bufferSet.getIdRanges(oids);
+					let bounds = bufferSet.getBounds(id_ranges);
+					
+					bufferSet.batchGpuRead(this.gl, ["positionBuffer", "normalBuffer", "colorBuffer", "pickColorBuffer"], bounds, () => {
 						for (const objectId of oids) {
 							let originalColor = bufferSet.setColor(this.gl, objectId, clr);
 							if (originalColor === false) {
@@ -594,7 +609,6 @@ export class Viewer {
      @return {*} Information about the object that was picked, if any.
      */
     pick(params) { // Returns info on the object at the given canvas coordinates
-
         var canvasPos = params.canvasPos;
         if (!canvasPos) {
             throw "param expected: canvasPos";
@@ -654,10 +668,16 @@ export class Viewer {
                 } else {
                     this.selectedElements.add(objectId);
                 }
+                for (const listener of this.selectionListeners) {
+                	listener(Array.from(this.selectedElements._originalOrderSet));
+                }
             }
             return {object: viewObject, normal: normal, coordinates: tmp_unproject};
         } else if (params.select !== false) {
             this.selectedElements.clear();
+            for (const listener of this.selectionListeners) {
+            	listener([]);
+            }
         }
 
         return {object: null, coordinates: tmp_unproject};
@@ -674,8 +694,18 @@ export class Viewer {
     }
 
     setModelBounds(modelBounds) {
-        this.modelBounds = modelBounds;
-        this.camera.setModelBounds(modelBounds);
+    	if (this.modelBounds != null) {
+    		// "Merge"
+    		this.modelBounds[0] = Math.min(this.modelBounds[0], modelBounds[0]);
+    		this.modelBounds[1] = Math.min(this.modelBounds[1], modelBounds[1]);
+    		this.modelBounds[2] = Math.min(this.modelBounds[2], modelBounds[2]);
+    		this.modelBounds[3] = Math.max(this.modelBounds[3], modelBounds[3]);
+    		this.modelBounds[4] = Math.max(this.modelBounds[4], modelBounds[4]);
+    		this.modelBounds[5] = Math.max(this.modelBounds[5], modelBounds[5]);
+    	} else {
+    		this.modelBounds = modelBounds;
+    	}
+        this.camera.setModelBounds(this.modelBounds);
         this.updateViewport();
     }
 

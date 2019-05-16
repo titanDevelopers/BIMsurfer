@@ -1,7 +1,7 @@
 import * as mat4 from "./glmatrix/mat4.js";
 import * as vec3 from "./glmatrix/vec3.js";
 
-import {Utils} from './utils.js'
+import {Utils} from "./utils.js";
 
 /**
  * This class is responsible for keeping track of the various matrices used for quantization/unquantization
@@ -30,7 +30,7 @@ export class VertexQuantization {
 	getUntransformedVertexQuantizationMatrixForCroid(croid) {
 		var matrix = this.untransformedQuantizationMatrices.get(croid);
 		if (matrix == null) {
-			throw "Not found: " + roid;
+			throw "Not found: " + croid;
 		}
 		return matrix;
 	}

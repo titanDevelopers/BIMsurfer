@@ -76,16 +76,21 @@ export class CameraControl {
             canvasPos[0] = event.x;
             canvasPos[1] = event.y;
         } else {
-            var element = event.target;
+//            var element = event.target;
             var totalOffsetLeft = 0;
             var totalOffsetTop = 0;
-            while (element.offsetParent) {
-                totalOffsetLeft += element.offsetLeft;
-                totalOffsetTop += element.offsetTop;
-                element = element.offsetParent;
-            }
+//            while (element.offsetParent) {
+//                totalOffsetLeft += element.offsetLeft;
+//                totalOffsetTop += element.offsetTop;
+//                element = element.offsetParent;
+//            }
+
+            var rect = event.target.getBoundingClientRect();
+            totalOffsetLeft = rect.left;
+            totalOffsetTop = rect.top;
             canvasPos[0] = event.pageX - totalOffsetLeft;
             canvasPos[1] = event.pageY - totalOffsetTop;
+            return [event.offsetX, event.offsetY];
         }
         return canvasPos;
     }
@@ -130,22 +135,24 @@ export class CameraControl {
                 // } else {
                 this.dragMode = DRAG_ORBIT;
                 let picked = this.viewer.pick({ canvasPos: [this.lastX, this.lastY], select: false });
-                // Changed: selectionListeners raised only when visual item was selected (not rotate)
-                // for (const listener of this.viewer.selectionListeners) {
-                //     listener(picked.object);
-                // }
                 if (picked && picked.coordinates && picked.object) {
                     this.viewer.camera.center = picked.coordinates;
                 } else {
-                    // Check if we can 'see' the previous center. If not, pick
-                    // a new point.
-                    let center_vp = vec3.transformMat4(vec3.create(), this.viewer.camera.center, this.viewer.camera.viewProjMatrix);
+                    this.dragMode = DRAG_ORBIT;
+                    let picked = this.viewer.pick({canvasPos:[this.lastX, this.lastY], select:false});
+                    if (picked && picked.coordinates && picked.object) {
+                        this.viewer.camera.center = picked.coordinates;
+                    } else {
+                        // Check if we can 'see' the previous center. If not, pick
+                        // a new point.
+                        let center_vp = vec3.transformMat4(vec3.create(), this.viewer.camera.center, this.viewer.camera.viewProjMatrix);
 
-                    let isv = true;
-                    for (let i = 0; i < 3; ++i) {
-                        if (center_vp[i] < -1. || center_vp[i] > 1.) {
-                            isv = false;
-                            break;
+                        let isv = true;
+                        for (let i = 0; i < 3; ++i) {
+                            if (center_vp[i] < -1. || center_vp[i] > 1.) {
+                                isv = false;
+                                break;
+                            }
                         }
                     }
 
@@ -170,8 +177,8 @@ export class CameraControl {
                 break;
         }
         this.over = true;
-        if (this.dragMode == DRAG_PAN) {
-            e.preventDefault();
+        if (this.dragMode == DRAG_PAN || e.shiftKey) {
+        	e.preventDefault();
         }
     }
 
@@ -196,10 +203,6 @@ export class CameraControl {
                     });
                     if (viewObject && viewObject.object) {
                         console.log("Picked", viewObject.object);
-                        // Changed: selectionListeners raised only when visual item was selected (not rotate)
-                        for (const listener of this.viewer.selectionListeners) {
-                            listener(viewObject.object);
-                        }
                     }
                     this.viewer.drawScene();
                 }
@@ -270,6 +273,10 @@ export class CameraControl {
      */
     documentMouseUp(e) {
         this.mouseDown = false;
+    	// Potential end-of-pan
+        if (this.dragMode == DRAG_PAN) {
+        	this.camera.updateLowVolumeListeners();
+        }
     }
 
     getEyeLookDist() {

@@ -1,5 +1,5 @@
-import {GeometryLoader} from './geometryloader.js'
-import {RenderLayer} from './renderlayer.js'
+import {BimserverGeometryLoader} from "./bimservergeometryloader.js";
+import {Utils} from "./utils.js";
 
 /**
  * When loading Tiles, there is sometimes geometry (GeometryData) that is reused in other Tiles as well, in that case it is omitted in the stream, to be loaded later.
@@ -41,7 +41,7 @@ export class ReuseLoader {
 		// The returned data (GeometryData) objects should be processed as normal, not as a preparedBuffer
 		query.loaderSettings.prepareBuffers = false;
 
-		var geometryLoader = new GeometryLoader(this.loaderCounter++, this.bimServerApi, this, this.roids, this.settings.loaderSettings, this.quantizationMap, this.viewer.stats, this.settings, query, null);
+		var geometryLoader = new BimserverGeometryLoader(this.loaderCounter++, this.bimServerApi, this, this.roids, this.settings.loaderSettings, this.quantizationMap, this.viewer.stats, this.settings, query, null);
 		var p = geometryLoader.start();
 		p.then(() => {
 			var end = performance.now();
@@ -50,12 +50,12 @@ export class ReuseLoader {
 	}
 	
 	/*
-	 * This class acts as if it's a RenderLayer, the createGeometry is called} from the GeometryLoader
+	 * This class acts as if it's a RenderLayer, the createGeometry is called} from the BimserverGeometryLoader
 	 * We just store the incoming geometry in the (global) GeometryCache
 	 */
 	createGeometry(loaderId, roid, croid, geometryId, positions, normals, colors, color, indices, hasTransparency, reused) {
 		this.nrReused++;
-		var bytes = RenderLayer.calculateBytesUsed(this.settings, positions.length, colors.length, indices.length, normals.length);
+		var bytes = Utils.calculateBytesUsed(this.settings, positions.length, colors.length, indices.length, normals.length);
 		this.bytesReused += bytes;
 		var geometry = {
 				id: geometryId,

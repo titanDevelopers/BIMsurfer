@@ -1,8 +1,8 @@
-import {BimServerViewer} from "./bimserverviewer.js"
+import {BimServerViewer} from "./bimserverviewer.js";
 import {EventHandler} from "./eventhandler.js";
 // @todo why?
-import {BimServerClient} from "http://localhost:8080/apps/bimserverjavascriptapi/bimserverclient.js"
-import {Stats} from "./stats.js"
+import {BimServerClient} from "http://localhost:8080/apps/bimserverjavascriptapi/bimserverclient.js";
+import {Stats} from "./stats.js";
 
 /**
  * Entry point for the public BimSurfer API.
@@ -98,14 +98,10 @@ export class BimSurfer extends EventHandler {
 	 */
 	load(params) {
 		return new Promise((resolve, reject) => {
-			this._api = new BimServerClient(params.bimserver);
-			this._api.init(() => {
-				this._api.login(params.username, params.password, () => {
-					this.loadProjects(params.roid).then((project)=>{                
-						this.loadModel(project, params.domNode).then(resolve).catch(reject);
-					}).catch(reject);
-				});
-			});
+			this._api = params.api;
+			this.loadProjects(params.roid).then((project)=>{                
+				this.loadModel(project, params.domNode).then(resolve).catch(reject);
+			}).catch(reject);
 		});
 	}
 	
