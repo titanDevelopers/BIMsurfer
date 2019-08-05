@@ -23,7 +23,9 @@ export class Settings {
 				quantizeColors: "boolean",
 				useObjectColors: "boolean",
 				tilingLayerReuse: "boolean",
-				prepareBuffers: "boolean"
+				prepareBuffers: "boolean",
+				generateLineRenders: "boolean",
+				useUuidAndRid: "boolean"
 			},
 			realtimeSettings: {
 				drawTileBorders: "boolean",
@@ -50,7 +52,8 @@ export class Settings {
 				quantizeColors: true,
 				useObjectColors: false,
 				tilingLayerReuse: true,
-				prepareBuffer: false
+				prepareBuffers: false,
+				useUuidAndRid: false
 			},
 			realtimeSettings: {
 				drawTileBorders: true,
@@ -180,7 +183,7 @@ export class Settings {
 	drawTileBorders(value) {
 		if (window.tilingRenderLayer != null) {
 			window.tilingRenderLayer.drawTileBorders = value;
-			window.bimServerViewer.viewer.dirty = true;
+			window.bimServerViewer.viewer.dirty = 2;
 		} else {
 			alert("No tiling layer");
 		}
@@ -188,6 +191,6 @@ export class Settings {
 
 	orderIndependentTransparency(value) {
 		window.bimServerViewer.viewer.useOrderIndependentTransparency = value;
-		window.bimServerViewer.viewer.dirty = true;
+		window.bimServerViewer.viewer.dirty = 2;
 	}
 }

@@ -49,12 +49,12 @@ export class Utils {
 	}
 	
 	/**
-	 * Converts the given 4x4 mat4 to an array
+	 * Converts the given mat/vec to an array
 	 */
-	static toArray(matrix) {
-		var result = new Array(16);
-		for (var i=0; i<16; i++) {
-			result[i] = matrix[i];
+	static toArray(input) {
+		var result = new Array(input.length);
+		for (var i=0; i<input.length; i++) {
+			result[i] = input[i];
 		}
 		return result;
 	}
@@ -131,8 +131,18 @@ export class Utils {
 		if (data.constructor.name == "DataView") {
 			size = byteCount;
 		}
+
+		// TODO add a general DEBUGGING flag somewhere to avoid doing unneeded checks
+		if (targetGlBuffer.writePosition + size > targetGlBuffer.byteSize) {
+			console.error("Buffer overflow by", (targetGlBuffer.writePosition + size) - targetGlBuffer.byteSize);
+			debugger;
+		}
 		
-		gl.bufferSubData(targetGlBuffer.gl_type, targetGlBuffer.writePosition, data, pos, size);
+		try {
+			gl.bufferSubData(targetGlBuffer.gl_type, targetGlBuffer.writePosition, data, pos, size);
+		} catch (e) {
+			debugger;
+		}
 		targetGlBuffer.writePosition += byteCount;
 	}
 	
@@ -140,17 +150,11 @@ export class Utils {
 		return Utils.createBuffer(gl, data, n, gl.ELEMENT_ARRAY_BUFFER);
 	}
 
-	static transformBounds(inputBounds, transformation) {
-		var minVector = vec3.create();
-		var maxVector = vec3.create();
-		vec3.set(minVector, inputBounds[0], inputBounds[1], inputBounds[2]);
-		vec3.set(maxVector, inputBounds[0] + inputBounds[3], inputBounds[1] + inputBounds[4], inputBounds[2] + inputBounds[5]);
-		
-		var normalizedMinVector = vec3.clone(minVector);
-		var normalizedMaxVector = vec3.clone(maxVector);
-		vec3.transformMat4(normalizedMinVector, normalizedMinVector, transformation);
-		vec3.transformMat4(normalizedMaxVector, normalizedMaxVector, transformation);
-		return [normalizedMinVector[0], normalizedMinVector[1], normalizedMinVector[2], normalizedMaxVector[0] - normalizedMinVector[0], normalizedMaxVector[1] - normalizedMinVector[1], normalizedMaxVector[2] - normalizedMinVector[2]];
+	static transformBounds(inputBounds, translation) {
+		let newBounds = new Float32Array(6);
+		vec3.add(newBounds, inputBounds, translation);
+		vec3.add(newBounds.subarray(3), inputBounds.subarray(3), translation);
+		return newBounds;
 	}
 	
 	static unionAabb(a, b) {
@@ -165,6 +169,10 @@ export class Utils {
 	static emptyAabb() {
 		let i = Infinity;
 		return new Float32Array([i,i,i,-i,-i,-i]);
+	}
+
+	static isEmptyAabb(aabb) {
+		return Array.from(aabb).some((a)=>(!isFinite(a)));
 	}
 	
 	static sortMapKeys(inputMap) {
@@ -198,7 +206,8 @@ export class Utils {
 		});
 	}
 	
-	static calculateBytesUsed(settings, nrVertices, nrColors, nrIndices, nrNormals) {
+	static calculateBytesUsed(settings, nrVertices, nrColors, nrIndices, nrLineIndices, nrNormals) {
+		// TODO add lineIndices
 		var bytes = 0;
 		if (settings.quantizeVertices) {
 			bytes += nrVertices * 2;
@@ -220,10 +229,59 @@ export class Utils {
 			bytes += nrIndices * 4;
 		}
 		if (settings.quantizeNormals) {
+			// Oct-encoding, the amount of normals is also the amount of bytes
 			bytes += nrNormals;
 		} else {
 			bytes += nrNormals * 4;
 		}
+//		if (!Number.isInteger(bytes)) {
+//			debugger;
+//		}
 		return bytes;
+	}
+	
+	// Decode an oct-encoded normal, not used currently, but was used for debugging
+	octDecodeVec2(oct) {
+       var x = oct[0];
+       var y = oct[1];
+       x /= x < 0 ? 128 : 127;
+       y /= y < 0 ? 128 : 127;
+
+       var z = 1 - Math.abs(x) - Math.abs(y);
+
+       if (z < 0) {
+           x = (1 - Math.abs(y)) * (x >= 0 ? 1 : -1);
+           y = (1 - Math.abs(x)) * (y >= 0 ? 1 : -1);
+       }
+
+       var length = Math.sqrt(x * x + y * y + z * z);
+
+       return [
+           x / length,
+           y / length,
+           z / length
+       ];
+   }
+	
+	static getLargestFaceArea(width, height, depth) {
+		var largestFaceArea = width * height;
+		if (width * depth > largestFaceArea) {
+			largestFaceArea = width * depth;
+		}
+		if (this.depth * height > largestFaceArea) {
+			largestFaceArea = depth * height;
+		}
+		return largestFaceArea;
+	}
+	
+	static getLargestEdge(width, height, depth) {
+		let largestEdge = width;
+		if (height > largestEdge) {
+			largestEdge = height;
+		}
+		if (this.depth > largestEdge) {
+			largestEdge = depth;
+		}
+		return largestEdge;
 	}
 }

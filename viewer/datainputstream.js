@@ -1,6 +1,14 @@
 // Reuse the text decoder
 let utf8TextDecoder = new TextDecoder("utf-8");
 
+
+var _byteToHex = [];
+var _hexToByte = {};
+for (var i = 0; i < 256; i++) {
+  _byteToHex[i] = (i + 0x100).toString(16).substr(1);
+  _hexToByte[_byteToHex[i]] = i;
+}
+
 /**
  * This class keeps track of the position of reading, supplies get methods for most types and provides alignment methods.
  * All data is assumed to be in LITTLE_ENDIAN!
@@ -43,7 +51,19 @@ export class DataInputStream {
 	}
 
 	readBytes(size) {
-		return this.arrayBuffer.slice(this.pos, this.pos + size);
+		const result = this.arrayBuffer.slice(this.pos, this.pos + size);
+		this.pos += size;
+		return result;
+	}
+	
+	readUnsignedByteArray(size) {
+		var results = [];
+		for (var i=0; i<size; i++) {
+			var value = this.dataView.getUint8(this.pos);
+			this.pos += 1;
+			results.push(value);
+		}
+		return results;
 	}
 	
 	readFloat() {
@@ -64,6 +84,12 @@ export class DataInputStream {
 		return value;
 	}
 
+	readUnsignedByte() {
+		var value = this.dataView.getUint8(this.pos);
+		this.pos += 1;
+		return value;
+	}
+
 	readLong() {
 		var value = this.dataView.getUint32(this.pos, true) + 0x100000000 * this.dataView.getUint32(this.pos + 4, true);
 		this.pos += 8;
@@ -78,6 +104,20 @@ export class DataInputStream {
 //		return value;
 //	}
 
+	readUuid() {
+		const bytes = this.readUnsignedByteArray(16);
+		// LITTLE_ENDIAN, Most significant long first
+		var bth = _byteToHex;
+		return bth[bytes[7]] + bth[bytes[6]] + 
+		bth[bytes[5]] + bth[bytes[4]] + "-" + 
+		bth[bytes[3]] + bth[bytes[2]] + "-" + 
+		bth[bytes[1]] + bth[bytes[0]] + "-" + 
+		bth[bytes[15]] + bth[bytes[14]] + "-" + 
+		bth[bytes[13]] + bth[bytes[12]] + 
+		bth[bytes[11]] + bth[bytes[10]] + 
+		bth[bytes[9]] + bth[bytes[8]];
+	}
+	
 	readFloatArray2(length) {
 		var results = [];
 		for (var i=0; i<length; i++) {
