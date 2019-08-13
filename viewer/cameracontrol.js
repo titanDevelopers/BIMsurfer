@@ -120,7 +120,8 @@ export class CameraControl {
     }
 
     keyEvent(e, state) {
-        if (e.key == "Control") {
+        // Changed: for section use shift
+        if (e.key == "Shift") {
             if (state === "down") {
                 if (this.viewer.sectionPlaneIsDisabled) {
                     this.viewer.positionSectionPlaneWidget({ canvasPos: [this.lastX, this.lastY] });
