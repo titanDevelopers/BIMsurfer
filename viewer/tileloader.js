@@ -1,7 +1,9 @@
-import {Executor} from './executor.js'
-import {Utils} from './utils.js'
-import {GpuBufferManager} from './gpubuffermanager.js'
-import {GeometryLoader} from "./geometryloader.js"
+import * as vec3 from "./glmatrix/vec3.js";
+
+import {Executor} from "./executor.js";
+import {Utils} from "./utils.js";
+import {GpuBufferManager} from "./gpubuffermanager.js";
+import {BimserverGeometryLoader} from "./bimservergeometryloader.js";
 
 /**
  * Loads tiles. Needs to be initialized first (initialize method).
@@ -36,17 +38,17 @@ export class TileLoader {
 	 */
 	initialize() {
 		var promise = new Promise((resolve, reject) => {
-			this.bimServerApi.call("ServiceInterface", "getTileCounts", {
+			this.bimServerApi.call("ServiceInterface", "getTiles", {
 				roids: this.roids,
 				excludedTypes: this.excludedTypes,
 				geometryIdsToReuse: this.geometryDataToReuse,
 				minimumThreshold: this.densityThreshold,
 				maximumThreshold: -1,
 				depth: this.settings.maxOctreeDepth
-			}, (list) => {
-				for (var i=0; i<list.length; i+=2) {
-					var tileId = list[i];
-					var nrObjects = list[i + 1];
+			}, (tiles) => {
+				for (var tile of tiles) {
+					var tileId = tile.tileId;
+					var nrObjects = tile.nrObjects;
 					if (nrObjects == 0) {
 						// Should not happen
 						debugger;
@@ -55,6 +57,10 @@ export class TileLoader {
 					}
 					this.viewer.stats.inc("Tiling", "Full");
 					var node = this.tilingRenderLayer.octree.getNodeById(tileId);
+					
+					const min = tile.minBounds.min;
+					const max = tile.minBounds.max;
+					node.minimalBox.set(vec3.fromValues(min.x, min.y, min.z), vec3.fromValues(max.x, max.y, max.z));
 					
 					node.loadingStatus = 0;
 					node.nrObjects = nrObjects;
@@ -95,7 +101,7 @@ export class TileLoader {
 		
 		const loaderSettings = JSON.parse(JSON.stringify(this.settings.loaderSettings));
 		
-		loaderSettings.globalTransformation = Utils.toArray(this.viewer.globalTransformation);
+		loaderSettings.globalTranslationVector = Utils.toArray(this.viewer.globalTranslationVector);
 		
 		var query = {
 			type: {
@@ -127,19 +133,19 @@ export class TileLoader {
 		};
 		
 		if (this.tilingRenderLayer.viewer.vertexQuantization) {
-			query.loaderSettings.vertexQuantizationMatrix = this.tilingRenderLayer.viewer.vertexQuantization.vertexQuantizationMatrixWithGlobalTransformation;
+			query.loaderSettings.vertexQuantizationMatrix = this.tilingRenderLayer.viewer.vertexQuantization.vertexQuantizationMatrixWithGlobalTranslation;
 		}
-		var geometryLoader = new GeometryLoader(this.loaderCounter++, this.bimServerApi, this.tilingRenderLayer, this.roids, this.settings.loaderSettings, this.quantizationMap, this.viewer.stats, this.settings, query, this.tilingRenderLayer.reusedGeometryCache, node.gpuBufferManager);
+		var geometryLoader = new BimserverGeometryLoader(this.loaderCounter++, this.bimServerApi, this.tilingRenderLayer, this.roids, this.settings.loaderSettings, this.quantizationMap, this.viewer.stats, this.settings, query, this.tilingRenderLayer.reusedGeometryCache, node.gpuBufferManager);
 		
 		// We now use the total model bounds for the quantization since the prebuilt buffers already applied the transformation, thus no problems are expected for strange bounds
-		geometryLoader.unquantizationMatrix = this.tilingRenderLayer.viewer.vertexQuantization.inverseVertexQuantizationMatrixWithGlobalTransformation;
+		geometryLoader.unquantizationMatrix = this.tilingRenderLayer.viewer.vertexQuantization.inverseVertexQuantizationMatrixWithGlobalTranslation;
 		
 		this.tilingRenderLayer.registerLoader(geometryLoader.loaderId);
 		this.tilingRenderLayer.loaderToNode[geometryLoader.loaderId] = node;
 		geometryLoader.onStart = () => {
 			node.loadingStatus = 2;
 			this.viewer.stats.inc("Tiling", "Loading");
-			this.viewer.dirty = true;
+			this.viewer.dirty = 2;
 		};
 		executor.add(geometryLoader).then(() => {
 			this.viewer.stats.dec("Tiling", "Loading");

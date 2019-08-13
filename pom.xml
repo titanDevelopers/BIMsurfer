@@ -1,10 +1,9 @@
 <?xml version="1.0"?>
-<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.opensourcebim</groupId>
   <artifactId>bimsurfer3</artifactId>
-  <version>0.0.22-SNAPSHOT</version>
+  <version>0.0.253</version>
   <name>BIMsurfer 3</name>
   <description>A 3D viewer library for BIM models</description>
   <url>https://github.com/TNOBIM/BIMSurfer</url>
@@ -27,7 +26,7 @@
   <scm>
     <connection>scm:git:https://github.com/TNOBIM/BIMSurfer.git</connection>
     <developerConnection>scm:git:https://github.com/TNOBIM/BIMSurfer.git</developerConnection>
-    <tag>bimsurfer3-0.0.6</tag>
+    <tag>bimsurfer3-0.0.253</tag>
     <url>https://github.com/TNOBIM/BIMSurfer.git</url>
   </scm>
   <issueManagement>
@@ -54,7 +53,7 @@
     <dependency>
       <groupId>org.opensourcebim</groupId>
       <artifactId>pluginbase</artifactId>
-      <version>1.5.133-SNAPSHOT</version>
+      <version>1.5.163</version>
     </dependency>
   </dependencies>
   <build>
@@ -170,6 +169,7 @@
             <checkModificationExclude>apps/interactive.js</checkModificationExclude>
             <checkModificationExclude>apps/minimal.js</checkModificationExclude>
             <checkModificationExclude>apps/tests.js</checkModificationExclude>
+            <checkModificationExclude>apps/api.html</checkModificationExclude>
             <checkModificationExclude>docs/index.html</checkModificationExclude>
           </checkModificationExcludes>
         </configuration>

@@ -1,28 +1,55 @@
 import * as mat4 from "./glmatrix/mat4.js";
 import * as vec3 from "./glmatrix/vec3.js";
 
+import {Projection} from "./projection.js";
+
 /**
  * Configures orthographic projection mode for the camera.
  * In this projection mode, an object's size in the rendered image stays constant regardless of its distance} from the camera.
  * Orthographic projection is represented as a viewing frustum, given as six planes.
  */
-export class Orthographic {
+export class Orthographic extends Projection {
 
     constructor(viewer) {
-        this.viewer = viewer;
-        this._projMatrix = mat4.create();
-        this._left = -1.0;
-        this._bottom = -1.0;
+    	super(viewer);
+
         this._near = 0.1;
-        this._right = 1.0;
-        this._top = 1.0;
         this._far = 5000;
-        this._dirty = true;
+        this.zoomFactor = 3;
+    }
+    
+	setModelBounds(modelBounds) {
+		super.setModelBounds(modelBounds);
+    }
+    
+    zoom(delta) {
+    	this.zoomFactor += (delta / 10000);
+    	this.build();
     }
 
-    _setDirty() {
-        this._dirty = true;
-        this.viewer.dirty = true;
+    build() {
+    	super.build();
+
+    	var maxW = 0;
+		for (let i=0; i<3; i++) {
+			let w = this.modelBounds[3 + i] - this.modelBounds[i];
+			if (w > maxW) {
+				maxW = w;
+			}
+		}
+		
+		maxW *= this.zoomFactor;
+		
+        var aspect = this.viewer.width / this.viewer.height;
+        const maxH = maxW / aspect;
+		
+		this._left =  -maxW / 2;
+		this._bottom = -maxH / 2;
+		this._right = maxW / 2;
+		this._top = maxH / 2;
+    	
+        mat4.ortho(this._projMatrix, this._left, this._right, this._bottom, this._top, this._near, this._far);
+        mat4.invert(this._projMatrixInverted, this._projMatrix);
     }
 
     /**
@@ -66,25 +93,6 @@ export class Orthographic {
     }
 
     /**
-     Sets the position of the near plane on the positive View-space Z-axis. Default is 0.1.
-
-     @param {Number} near Position of the near clipping plane. The valid range is between 0 and the current value of the far plane
-     */
-    set near(near) {
-        this._near = near || 0.1;
-        this._setDirty();
-    }
-
-    /**
-     Gets the position of the near plane on the positive View-space Z-axis.
-
-     @return {Number} Position of the near clipping plane.
-     */
-    get near() {
-        return this._near;
-    }
-
-    /**
      Sets the position of the right plane on the positive View-space X-axis.
 
      @param {Number} right Position of the right plane.
@@ -121,39 +129,5 @@ export class Orthographic {
      */
     get top() {
         return this._top;
-    }
-
-    /**
-     Sets the position of the far plane on the positive View-space Z-axis. Default is 5000.
-
-     @param {Number} far Position of the far clipping plane. The valid range is between the current value of the near plane and infinity.
-     */
-    set far(far) {
-        this._far = far || 5000;
-        this._setDirty();
-    }
-
-    /**
-     Gets the position of the far clipping plane on the positive View-space Z-axis.
-
-     @return {Number} Position of the far clipping plane.
-     */
-    get far() {
-        return this._far;
-    }
-
-    /**
-     Gets the current orthographic projection transform matrix.
-
-     This will be the camera's current projection matrix when it's in orthographic projection mode.
-
-     @return {Float32Array} 4x4 column-order matrix as an array of 16 contiguous floats.
-     */
-    get projMatrix() {
-        if (this._dirty) {
-            mat4.ortho(this._projMatrix, this._left, this._right, this._bottom, this._top, this._near, this._far);
-            this._dirty = false;
-        }
-        return this._projMatrix;
     }
 }
