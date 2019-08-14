@@ -1,42 +1,41 @@
+import * as vec4 from "./glmatrix/vec4.js";
 import * as mat4 from "./glmatrix/mat4.js";
 import * as mat3 from "./glmatrix/mat3.js";
-import * as vec3 from "./glmatrix/vec3.js";
 
-import {DataInputStream} from "./datainputstream.js"
-import {DefaultColors} from "./defaultcolors.js"
-import {RenderLayer} from "./renderlayer.js"
-import {Utils} from "./utils.js"
+import {Utils} from "./utils.js";
+import {DataInputStream} from "./datainputstream.js";
 
-const PROTOCOL_VERSION = 17;
+import {AvlTree} from "./collections/avltree.js";
+
+const PROTOCOL_VERSION = 19;
+
+// temporary for emergency quantization
+const v4 = vec4.create();
 
 /**
- * GeometryLoader loads data} from a BIMserver
+ * This class is supposed to be and stay BIMserver-free.
  */
-export class GeometryLoader {
 
-	constructor(loaderId, bimServerApi, renderLayer, roids, loaderSettings, vertexQuantizationMatrices, stats, settings, query, geometryCache, gpuBufferManager) {
+export class GeometryLoader {
+	constructor(loaderId, renderLayer, loaderSettings, vertexQuantizationMatrices, stats, settings, geometryCache, gpuBufferManager, usePreparedBuffers) {
 		this.renderLayer = renderLayer;
 		this.settings = settings;
 		
-		this.query = query;
 		this.loaderSettings = loaderSettings;
 
 		this.loaderId = loaderId;
-		this.bimServerApi = bimServerApi;
-		this.roids = roids;
 		this.vertexQuantizationMatrices = vertexQuantizationMatrices;
 		this.stats = stats;
 		this.geometryCache = geometryCache;
 
 		this.state = {};
 		this.objectAddedListeners = [];
-		this.prepareReceived = false;
 		this.geometryIds = new Map();
 		this.dataToInfo = new Map();
 		
 		this.gpuBufferManager = gpuBufferManager;
 
-		if (query.loaderSettings.prepareBuffers) {
+		if (usePreparedBuffers) {
 			this.createdTransparentObjects = new Map(); // object id -> object info
 			this.createdOpaqueObjects = new Map(); // object id -> object info
 		}
@@ -44,53 +43,311 @@ export class GeometryLoader {
 		this.promise = new Promise((resolve, reject) => {
 			this.resolve = resolve;
 		});
+
+		// Object IDs need to be stored so that references
+		// to the GPU BufferSet can be made later, which is
+		// only constructed at the end of geometry loading.
+		this.uniqueIdsLoaded = [];
 	}
 	
-	// This promise is fired as soon as the GeometryLoader is done
-	getPromise() {
-		return promise;
-	}
+	processPreparedBufferInit(stream, hasTransparancy) {
+		this.preparedBuffer = {};
 
-	start() {
-		if (this.onStart != null) {
-			this.onStart();
-		}
-		var obj = [];
+		this.preparedBuffer.nrObjects = stream.readInt();
+		this.preparedBuffer.nrIndices = stream.readInt();
 		
-		var loaderSettings = JSON.parse(JSON.stringify(this.loaderSettings));
-		if (this.vertexQuantizationMatrices != null) {
-			this.query.loaderSettings.vertexQuantizationMatrices = this.vertexQuantizationMatrices;
+		this.preparedBuffer.nrLineIndices = stream.readInt();
+		this.preparedBuffer.positionsIndex = stream.readInt();
+		this.preparedBuffer.normalsIndex = stream.readInt();
+		this.preparedBuffer.colorsIndex = stream.readInt();
+		
+		this.preparedBuffer.indicesRead = 0;
+		this.preparedBuffer.lineIndicesRead = 0;
+		this.preparedBuffer.positionsRead = 0;
+		this.preparedBuffer.normalsRead = 0;
+		this.preparedBuffer.colorsRead = 0;
+
+		this.preparedBuffer.nrObjectsRead = 0;
+
+		this.preparedBuffer.nrColors = this.preparedBuffer.positionsIndex * 4 / 3;
+
+		this.preparedBuffer.indices = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrIndices, this.renderLayer.gl.ELEMENT_ARRAY_BUFFER, 3, WebGL2RenderingContext.UNSIGNED_INT, "Uint32Array");
+		if (this.loaderSettings.generateLineRenders) {
+			this.preparedBuffer.lineIndices = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrLineIndices, this.renderLayer.gl.ELEMENT_ARRAY_BUFFER, 2, WebGL2RenderingContext.UNSIGNED_INT, "Uint32Array");
+		}
+		this.preparedBuffer.colors = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrColors, this.renderLayer.gl.ARRAY_BUFFER, 4, WebGL2RenderingContext.UNSIGNED_BYTE, "Uint8Array");
+		this.preparedBuffer.vertices = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.positionsIndex, this.renderLayer.gl.ARRAY_BUFFER, 3, this.settings.quantizeVertices ? WebGL2RenderingContext.SHORT : WebGL2RenderingContext.FLOAT, this.settings.quantizeVertices ? "Int16Array" : "Float32Array");
+		this.preparedBuffer.normals = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.normalsIndex, this.renderLayer.gl.ARRAY_BUFFER, 2, WebGL2RenderingContext.BYTE, "Int8Array");
+		this.preparedBuffer.pickColors = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrColors, this.renderLayer.gl.ARRAY_BUFFER, 4, WebGL2RenderingContext.UNSIGNED_BYTE, "Uint8Array");
+
+		this.preparedBuffer.uniqueIdToIndex = new AvlTree(this.renderLayer.viewer.inverseUniqueIdCompareFunction);
+
+		this.preparedBuffer.loaderId = this.loaderId;
+		this.preparedBuffer.hasTransparency = hasTransparancy;
+
+		if (this.loaderSettings.quantizeVertices) {
+			this.preparedBuffer.unquantizationMatrix = this.unquantizationMatrix;
 		}
 
-		this.bimServerApi.getSerializerByPluginClassName("org.bimserver.serializers.binarygeometry.BinaryGeometryMessagingStreamingSerializerPlugin").then((serializer) => {
-			this.bimServerApi.callWithWebsocket("ServiceInterface", "download", {
-				roids: this.roids,
-				query: JSON.stringify(this.query),
-				serializerOid : serializer.oid,
-				sync : false
-			}).then((topicId) => {
-				this.topicId = topicId;
-				
-				this.state = {
-					mode: 0,
-					nrObjectsRead: 0,
-					nrObjects: 0
-				};
-				var msg = {
-					topicId: this.topicId
-				};
-				this.bimServerApi.setBinaryDataListener(this.topicId, (data) => {
-					this.binaryDataListener(data);
-				});
-				this.bimServerApi.downloadViaWebsocket(msg);
-			});
-		});
-		return this.promise;
+		this.preparedBuffer.bytes = Utils.calculateBytesUsed(this.settings, this.preparedBuffer.positionsIndex, this.preparedBuffer.nrColors, this.preparedBuffer.nrIndices, this.preparedBuffer.nrLineIndices, this.preparedBuffer.normalsIndex);
+
+		stream.align8();
 	}
 
+	processPreparedBuffer(stream, hasTransparancy) {
+		const loadedViewObjects = [];
+
+		const nrObjects = stream.readInt();
+		const totalNrIndices = stream.readInt();
+		const totalNrLineIndices = stream.readInt();
+		const positionsIndex = stream.readInt();
+		const normalsIndex = stream.readInt();
+		const colorsIndex = stream.readInt();
+
+		if (this.preparedBuffer.nrIndices == 0) {
+			return;
+		}
+		
+		this.preparedBuffer.indicesRead += totalNrIndices;
+		this.preparedBuffer.lineIndicesRead += totalNrLineIndices;
+		this.preparedBuffer.positionsRead += positionsIndex;
+		this.preparedBuffer.normalsRead += normalsIndex;
+		this.preparedBuffer.colorsRead += colorsIndex;
+		
+		const previousStartIndex = this.preparedBuffer.indices.writePosition / 4;
+		const previousLineIndexStart = this.loaderSettings.generateLineRenders ? this.preparedBuffer.lineIndices.writePosition / 4 : 0;
+		const previousColorIndex = this.preparedBuffer.colors.writePosition;
+		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.indices, stream.dataView, stream.pos, totalNrIndices);
+		stream.pos += totalNrIndices * 4;
+
+		if (this.loaderSettings.generateLineRenders) {
+			Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.lineIndices, stream.dataView, stream.pos, totalNrLineIndices);
+			stream.pos += totalNrLineIndices * 4;
+		}
+
+		var nrColors = positionsIndex * 4 / 3;
+		var colors = new Uint8Array(nrColors);
+		var colors32 = new Uint32Array(colors.buffer);
+		var createdObjects = null;
+
+		if (hasTransparancy) {
+			createdObjects = this.createdTransparentObjects;
+		} else {
+			createdObjects = this.createdOpaqueObjects;
+		}
+
+		var pickColors = new Uint8Array(positionsIndex * 4 / 3);
+		var pickColors32 = new Uint32Array(pickColors.buffer);
+		pickColors.i = 0;
+
+		var currentColorIndex = 0;
+
+		const collectedMetaObjects = [];
+		
+		for (var i = 0; i < nrObjects; i++) {
+			var oid = stream.readLong();
+			var uniqueId = oid;
+			if (this.loaderSettings.useUuidAndRid) {
+				let uuid = stream.readUuid();
+				let rid = stream.readInt();
+				uniqueId = uuid + (rid == 1 ? "" : "-" + rid);
+			}
+			this.uniqueIdsLoaded.push(uniqueId);
+
+			var startIndex = stream.readInt();
+			var startLineIndex = stream.readInt();
+			var nrIndices = stream.readInt();
+			var nrLineIndices = stream.readInt();
+			var nrVertices = stream.readInt();
+			var minIndex = stream.readInt();
+			var maxIndex = stream.readInt();
+			var nrObjectColors = nrVertices / 3 * 4;
+
+			if (!createdObjects) {
+				loadedViewObjects.push(unqueId);
+				const viewObject = {
+					type: "Annotation",
+					pickId: uniqueId
+				}
+				this.renderLayer.viewer.addViewObject(uniqueId, viewObject);				
+			}
+
+			var pickColor = this.renderLayer.viewer.getPickColor(uniqueId);
+			var color32 = pickColor[0] + pickColor[1] * 256 + pickColor[2] * 256 * 256 + pickColor[3] * 256 * 256 * 256;
+			var lenObjectPickColors = nrObjectColors;
+			pickColors32.fill(color32, pickColors.i / 4, (pickColors.i + lenObjectPickColors) / 4);
+			pickColors.i += lenObjectPickColors;
+
+			const density = stream.readFloat();
+
+			var colorPackSize = stream.readInt();
+			if (createdObjects) {
+				var object = createdObjects.get(uniqueId);
+				object.density = density;
+			}
+
+			const meta = {
+				start: previousStartIndex + startIndex,
+				length: nrIndices,
+				lineIndicesStart: previousLineIndexStart + startLineIndex,
+				lineIndicesLength: nrLineIndices,
+				color: previousColorIndex + currentColorIndex,
+				colorLength: nrObjectColors,
+				minIndex: minIndex,
+				maxIndex: maxIndex
+			};
+			this.preparedBuffer.uniqueIdToIndex.set(uniqueId, [meta]);
+			collectedMetaObjects.push(meta);
+			
+			if (colorPackSize == 0) {
+				// Generate default colors for this object
+				var defaultColor = this.renderLayer.viewer.defaultColors[object.type];
+				if (defaultColor == null) {
+					defaultColor = this.renderLayer.viewer.defaultColors.DEFAULT;
+				}
+				if (defaultColor.asInt == null) {
+					// Cache the integer version
+					var color = new Uint8Array(4);
+					color[0] = defaultColor.r * 255;
+					color[1] = defaultColor.g * 255;
+					color[2] = defaultColor.b * 255;
+					color[3] = defaultColor.a * 255;
+					defaultColor.asInt = color[0] + color[1] * 256 + color[2] * 65536 + color[3] * 16777216;
+				}
+				colors32.fill(defaultColor.asInt, currentColorIndex / 4, (currentColorIndex + nrObjectColors) / 4);
+				currentColorIndex += nrObjectColors;
+			}
+			for (var j = 0; j < colorPackSize; j++) {
+				var count = stream.readInt();
+				var color = stream.readUnsignedByteArray(4);
+				var color32 = color[0] + color[1] * 256 + color[2] * 65536 + color[3] * 16777216;
+				colors32.fill(color32, (currentColorIndex / 4), (currentColorIndex + count) / 4);
+				currentColorIndex += count;
+			}
+		}
+		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.colors, colors, 0, nrColors);
+
+		if (this.loaderSettings.quantizeVertices) {
+			if (!this.settings.quantizeVertices) {
+				// we need to do some alignment here
+				const floats = new Float32Array(positionsIndex);
+				const aligned_u8 = new Uint8Array(floats.buffer);
+				const unaligned_u8 = new Uint8Array(stream.dataView.buffer, stream.pos, aligned_u8.length);
+				stream.pos += aligned_u8.length;
+				aligned_u8.set(unaligned_u8);
+				
+				// now we can quantize the input
+				// admittedly there was code for this in BufferTransformer, but it was commented out?
+				const m4 = this.vertexQuantizationMatrices.vertexQuantizationMatrix;
+				for (var i = 0; i < floats.length; i += 3) {
+					v4.set(floats.subarray(i, i + 3));
+					v4[3] = 1.0;
+					vec4.transformMat4(v4, v4, m4);
+					floats.set(v4.subarray(0, 3), i);
+				}
+				const quantized = new Int16Array(floats);
+
+				Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.vertices, quantized, 0, quantized.length);
+			} else {
+				Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.vertices, stream.dataView, stream.pos, positionsIndex);
+				stream.pos += positionsIndex * 2;
+			}		
+		} else {
+			const floats = new Float32Array(stream.dataView.buffer, stream.pos, positionsIndex);
+			if (this.settings.quantizeVertices) {
+				const quantized = new Int16Array(floats.length);
+				const m4 = this.vertexQuantizationMatrices.vertexQuantizationMatrix;
+				for (var i = 0; i < floats.length; i += 3) {
+					v4.set(floats.subarray(i, i + 3));
+					v4[3] = 1.0;
+					vec4.transformMat4(v4, v4, m4);
+					quantized.set(v4.subarray(0, 3), i);
+				}
+				Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.vertices, quantized, 0, quantized.length);
+			} else {
+				Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.vertices, floats, 0, floats.length);
+			}
+			stream.pos += positionsIndex * 4;
+
+			// @todo a bit ugly, but only in this case the AABB for the on-demand loaded object
+			// is computed.
+			if (loadedViewObjects.length) {
+				for (var i = 0; i < collectedMetaObjects.length; ++i) {
+					const meta = collectedMetaObjects[i];
+					const oid = loadedViewObjects[i];
+					const aabb = new Float32Array(6);
+					aabb.fill(Infinity);
+					aabb.subarray(3).fill(-Infinity);
+					for (var j = meta.minIndex; j <= meta.maxIndex; j += 3) {
+						if (floats[j+0] < aabb[0]) {
+							aabb[0] = floats[j+0];
+						}
+						if (floats[j+1] < aabb[1]) {
+							aabb[1] = floats[j+1];
+						}
+						if (floats[j+2] < aabb[2]) {
+							aabb[2] = floats[j+2];
+						}
+						if (floats[j+0] > aabb[3]) {
+							aabb[3] = floats[j+0];
+						}
+						if (floats[j+1] > aabb[4]) {
+							aabb[4] = floats[j+1];
+						}
+						if (floats[j+2] > aabb[5]) {
+							aabb[5] = floats[j+2];
+						}
+					}				
+					var globalizedAabb = Utils.transformBounds(aabb, this.renderLayer.viewer.globalTranslationVector);			
+					const viewobj = this.renderLayer.viewer.getViewObject(oid);
+					viewobj.aabb = aabb;
+					viewobj.globalizedAabb = globalizedAabb;
+				}
+			}
+
+		}
+		
+		// Debugging oct-encoding
+//		var octNormals = new Int8Array(stream.dataView.buffer, stream.pos, ((normalsIndex / 3) * 2));
+//		for (var i=0; i<octNormals.length; i+=2) {
+//			console.log(Utils.octDecodeVec2([octNormals[i], octNormals[i+1]]));
+//		}
+		
+		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.normals, stream.dataView, stream.pos, ((normalsIndex / 3) * 2), true);
+		stream.pos += ((normalsIndex / 3) * 2);
+
+		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.pickColors, pickColors, 0, pickColors.i);
+
+		this.preparedBuffer.nrObjectsRead += nrObjects;
+		
+		if (this.preparedGpuBuffer == null) {
+			this.preparedGpuBuffer = this.renderLayer.addCompleteBuffer(this.preparedBuffer, this.gpuBufferManager);
+		}
+
+		this.preparedGpuBuffer.update(this.preparedBuffer.indicesRead, this.preparedBuffer.positionsRead, this.preparedBuffer.normalsRead, this.preparedBuffer.colorsRead);
+		this.renderLayer.viewer.dirty = 1;
+		this.renderLayer.incLoadedTriangles(totalNrIndices / 3);
+		
+		if (this.preparedBuffer.nrObjectsRead == this.preparedBuffer.nrObjects) {
+			this.preparedGpuBuffer.finalize();
+
+			for (let oid of this.uniqueIdsLoaded) {
+				this.renderLayer.viewer.uniqueIdToBufferSet.set(oid, [this.preparedGpuBuffer]);
+			}
+
+			this.uniqueIdsLoaded.length = 0;
+			this.preparedGpuBuffer = null;
+			this.preparedBuffer = null;
+		}
+
+		stream.align8();
+
+		return loadedViewObjects;
+	}
+	
 	processMessage(stream) {
 		var messageType = stream.readByte();
-
+		
 		if (messageType == 0) {
 			if (!this.readStart(stream)) {
 				// An error occured, usually version mismatch or missing serializer
@@ -104,30 +361,30 @@ export class GeometryLoader {
 		stream.align8();
 		return stream.remaining() > 0;
 	}
+
+	endOfStream() {
+		if (this.dataToInfo.size > 0) {
+			// We need to tell the renderlayer that not all data has been loaded
+			this.renderLayer.storeMissingGeometry(this, this.dataToInfo);
+		}
+		if (this.dataToInfo.size == 0) {
+			// Only resolve (and cleanup this loader) when all has been loaded
+			this.resolve();
+		}
+	}
 	
 	binaryDataListener(data) {
 		this.stats.inc("Network", "Bytes OTL", data.byteLength);
 		var stream = new DataInputStream(data);
 		var channel = stream.readLong();
-
-		while (this.processMessage(stream)) {
-			
-		}
-	}
-
-	readEnd(data) {
-		if (this.dataToInfo.size > 0) {
-			// We need to tell the renderlayer that not all data has been loaded
-			this.renderLayer.storeMissingGeometry(this, this.dataToInfo);
-		}
-//		console.log(this.dataToInfo);
-
-//		this.viewer.loadingDone();
-		this.bimServerApi.callWithWebsocket("ServiceInterface", "cleanupLongAction", {topicId: this.topicId});
-		this.bimServerApi.clearBinaryDataListener(this.topicId);
-		if (this.dataToInfo.size == 0) {
-			// Only resolve (and cleanup this loader) when all has been loaded
-			this.resolve();
+		var type = stream.readLong();
+		if (type == 0) {
+			while (this.processMessage(stream)) {
+				
+			}
+		} else if (type == 1) {
+			this.endOfStream();
+			// End of stream
 		}
 	}
 	
@@ -138,32 +395,7 @@ export class GeometryLoader {
 			this.resolve();
 		}
 	}
-
-	readStart(data) {
-		var start = data.readUTF8();
-
-		if (start != "BGS") {
-			console.error("Data does not start with BGS (" + start + ")");
-			return false;
-		}
-
-		this.protocolVersion = data.readByte();
-
-		if (this.protocolVersion != PROTOCOL_VERSION) {
-			console.error("Unimplemented version (protocol: " + this.protocolVersion + ", implemented: " + PROTOCOL_VERSION + ").\nUsually this means you need to either:\n\t- Update the BinarySerializers plugin bundle in BIMserver\n\t- Update your version of BIMsurfer 3");
-			return false;
-		}
-
-		this.multiplierToMm = data.readFloat();
-		data.align8();
-
-		var boundary = data.readDoubleArray(6);
-
-		this.state.mode = 1;
-		
-		return true;
-	}
-
+	
 	readObject(stream, geometryType) {
 		var geometryId;
 		var numGeometries;
@@ -206,6 +438,10 @@ export class GeometryLoader {
 			// Object
 			var inPreparedBuffer = stream.readByte() == 1;
 			var oid = stream.readLong();
+			if (this.loaderSettings.useUuidAndRid) {
+				let uuid = stream.readUuid();
+				let rid = stream.readInt();
+			}
 			var type = stream.readUTF8();
 			var nrColors = stream.readInt();
 			stream.align8();
@@ -252,10 +488,16 @@ export class GeometryLoader {
 				geometryDataOidFound = null;
 			}
 			
-			this.createObject(roid, oid, oid, geometryDataOidFound == null ? [] : [geometryDataOidFound], matrix, hasTransparency, type, objectBounds, inPreparedBuffer);
+			this.createObject(roid, uniqueId, geometryDataOidFound == null ? [] : [geometryDataOidFound], matrix, hasTransparency, type, objectBounds, inPreparedBuffer);
 		} else if (geometryType == 9) {
 			// Minimal object
 			var oid = stream.readLong();
+			var uniqueId = oid;
+			if (this.loaderSettings.useUuidAndRid) {
+				let uuid = stream.readUuid();
+				let rid = stream.readInt();
+				uniqueId = uuid + (rid == 1 ? "" : "-" + rid);
+			}
 			var type = stream.readUTF8();
 			var nrColors = stream.readInt();
 			var roid = stream.readLong();
@@ -268,18 +510,18 @@ export class GeometryLoader {
 			var geometryDataOid = stream.readLong();
 			var geometryDataOidFound = geometryDataOid;
 			if (hasTransparency) {
-				this.createdTransparentObjects.set(oid, {
+				this.createdTransparentObjects.set(uniqueId, {
 					nrColors: nrColors,
 					type: type
 				});
 			} else {
-				this.createdOpaqueObjects.set(oid, {
+				this.createdOpaqueObjects.set(uniqueId, {
 					nrColors: nrColors,
 					type: type
 				});
 			}
 			
-			this.createObject(roid, oid, oid, [], null, hasTransparency, type, objectBounds, true);
+			this.createObject(roid, uniqueId, [], null, hasTransparency, type, objectBounds, true);
 		} else if (geometryType == 7) {
 			this.processPreparedBuffer(stream, true);
 		} else if (geometryType == 8) {
@@ -294,159 +536,6 @@ export class GeometryLoader {
 		}
 
 		this.state.nrObjectsRead++;
-	}
-
-	processPreparedBufferInit(stream, hasTransparancy) {
-		this.preparedBuffer = {};
-
-		this.preparedBuffer.nrObjects = stream.readInt();
-		this.preparedBuffer.nrIndices = stream.readInt();
-		this.preparedBuffer.positionsIndex = stream.readInt();
-		this.preparedBuffer.normalsIndex = stream.readInt();
-		this.preparedBuffer.colorsIndex = stream.readInt();
-		
-		this.preparedBuffer.nrObjectsRead = 0;
-		
-		this.preparedBuffer.nrColors = this.preparedBuffer.positionsIndex * 4 / 3;
-
-		this.preparedBuffer.indices = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrIndices, this.renderLayer.gl.ELEMENT_ARRAY_BUFFER, 3, WebGL2RenderingContext.UNSIGNED_INT, "Uint32Array");
-		this.preparedBuffer.colors = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrColors, this.renderLayer.gl.ARRAY_BUFFER, 4, WebGL2RenderingContext.UNSIGNED_BYTE, "Uint8Array");
-		this.preparedBuffer.vertices = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.positionsIndex, this.renderLayer.gl.ARRAY_BUFFER, 3, this.loaderSettings.quantizeVertices ? WebGL2RenderingContext.SHORT : WebGL2RenderingContext.FLOAT, this.loaderSettings.quantizeVertices ? "Int16Array" : "Float32Array");
-		this.preparedBuffer.normals = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.normalsIndex, this.renderLayer.gl.ARRAY_BUFFER, 3, WebGL2RenderingContext.BYTE, "Int8Array");
-		this.preparedBuffer.pickColors = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrColors, this.renderLayer.gl.ARRAY_BUFFER, 4, WebGL2RenderingContext.UNSIGNED_BYTE, "Uint8Array");
-		this.preparedBuffer.pickColors = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrColors, this.renderLayer.gl.ARRAY_BUFFER, 4, WebGL2RenderingContext.UNSIGNED_BYTE, "Uint8Array");
-		
-		this.preparedBuffer.geometryIdToIndex = new Map();
-		this.preparedBuffer.geometryIdToMeta = new Map();
-
-		this.preparedBuffer.loaderId = this.loaderId;
-		this.preparedBuffer.hasTransparency = hasTransparancy;
-		
-		if (this.loaderSettings.quantizeVertices) {
-			this.preparedBuffer.unquantizationMatrix = this.unquantizationMatrix;
-		}
-
-		this.preparedBuffer.bytes = RenderLayer.calculateBytesUsed(this.settings, this.preparedBuffer.positionsIndex, this.preparedBuffer.nrColors, this.preparedBuffer.nrIndices, this.preparedBuffer.normalsIndex);
-		
-		stream.align8();
-	}
-	
-	processPreparedBuffer(stream, hasTransparancy) {
-		const nrObjects = stream.readInt();
-		const totalNrIndices = stream.readInt();
-		const positionsIndex = stream.readInt();
-		const normalsIndex = stream.readInt();
-		const colorsIndex = stream.readInt();
-		
-		if (this.preparedBuffer.nrIndices == 0) {
-			return;
-		}
-		const previousStartIndex = this.preparedBuffer.indices.writePosition / 4;
-		const previousColorIndex = this.preparedBuffer.colors.writePosition;
-		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.indices, stream.dataView, stream.pos, totalNrIndices);
-		stream.pos += totalNrIndices * 4;
-		
-		var nrColors = positionsIndex * 4 / 3;
-		var colors = new Uint8Array(nrColors);
-		var colors32 = new Uint32Array(colors.buffer);
-		var createdObjects = null;
-		
-		if (hasTransparancy) {
-			createdObjects = this.createdTransparentObjects;
-		} else {
-			createdObjects = this.createdOpaqueObjects;
-		}
-		
-		var currentColorIndex = 0;
-		var tmpOids = new Set();
-		for (var i=0; i<nrObjects; i++) {
-			var oid = stream.readLong();
-			tmpOids.add(oid);
-			var startIndex = stream.readInt();
-			var nrIndices = stream.readInt();
-			var nrVertices = stream.readInt();
-			var nrObjectColors = nrVertices / 3 * 4;
-			
-			const density = stream.readFloat();
-
-			var colorPackSize = stream.readInt();
-			var object = createdObjects.get(oid);
-			object.density = density;
-			var type = object.type;
-			
-			const meta = {
-				start: previousStartIndex + startIndex,
-				length: nrIndices,
-				color: previousColorIndex + currentColorIndex,
-				colorLength: nrObjectColors
-			};
-			this.preparedBuffer.geometryIdToMeta.set(oid, [meta]);
-			
-			if (colorPackSize == 0) {
-				// Generate default colors for this object
-				var defaultColor = DefaultColors[type];
-				if (defaultColor == null) {
-					defaultColor = DefaultColors.DEFAULT;
-				}
-				if (defaultColor.asInt == null) {
-					// Cache the integer version
-					var color = new Uint8Array(4);
-					color[0] = defaultColor.r * 255;
-					color[1] = defaultColor.g * 255;
-					color[2] = defaultColor.b * 255;
-					color[3] = defaultColor.a * 255;
-					defaultColor.asInt = color[0] + color[1] * 256 + color[2] * 65536 + color[3] * 16777216;
-				}
-				colors32.fill(defaultColor.asInt, currentColorIndex / 4, (currentColorIndex + nrObjectColors) / 4);
-				currentColorIndex += nrObjectColors;
-			}
-			for (var j=0; j<colorPackSize; j++) {
-				var count = stream.readInt();
-				var color = stream.readUnsignedByteArray(4);
-				var color32 = color[0] + color[1] * 256 + color[2] * 65536 + color[3] * 16777216;
-				colors32.fill(color32, (currentColorIndex / 4), (currentColorIndex + count) / 4);
-				currentColorIndex += count;
-			}
-			
-			this.preparedBuffer.geometryIdToIndex.set(oid, previousStartIndex + startIndex);
-		}
-		if (currentColorIndex != nrColors) {
-			console.error(currentColorIndex, nrColors);
-		}
-		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.colors, colors, 0, nrColors);
-
-		if (this.loaderSettings.quantizeVertices) {
-			Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.vertices, stream.dataView, stream.pos, positionsIndex);
-			stream.pos += positionsIndex * 2;
-		} else {
-			Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.vertices, stream.dataView, stream.pos, positionsIndex);
-			stream.pos += positionsIndex * 4;
-		}
-		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.normals, stream.dataView, stream.pos, normalsIndex);
-		stream.pos += normalsIndex;
-		
-		var pickColors = new Uint8Array(positionsIndex * 4);
-		var pickColors32 = new Uint32Array(pickColors.buffer);
-		pickColors.i = 0;
-
-		for (var [oid, objectInfo] of createdObjects) {
-			if (tmpOids.has(oid)) {
-				var pickColor = this.renderLayer.viewer.getPickColor(oid);
-				var color32 = pickColor[0] + pickColor[1] * 256 + pickColor[2] * 256 * 256 + pickColor[3] * 256 * 256 * 256;
-				var lenObjectPickColors = objectInfo.nrColors;
-				pickColors32.fill(color32, pickColors.i / 4, (pickColors.i + lenObjectPickColors) / 4);
-				pickColors.i += lenObjectPickColors;
-			}
-		}
-		
-		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.pickColors, pickColors, 0, pickColors.i);
-		
-		this.preparedBuffer.nrObjectsRead += nrObjects;
-		if (this.preparedBuffer.nrObjectsRead == this.preparedBuffer.nrObjects) {
-			this.renderLayer.addCompleteBuffer(this.preparedBuffer, this.gpuBufferManager);
-		}
-		
-		stream.align8();
 	}
 
 	readGeometry(stream, roid, croid, geometryId, geometryDataOid, hasTransparency, reused, type, useIntForIndices) {
@@ -513,7 +602,7 @@ export class GeometryLoader {
 		if (colors.length == 0) {
 			debugger;
 		}
-		this.renderLayer.createGeometry(this.loaderId, roid, croid, geometryDataOid, positions, normals, colors, color, indices, hasTransparency, reused);
+		this.renderLayer.createGeometry(this.loaderId, roid, croid, geometryDataOid, positions, normals, colors, color, indices, null, hasTransparency, reused);
 	}
 
 	readColors(stream, type) {
@@ -521,7 +610,7 @@ export class GeometryLoader {
 		if (b == 1) {
 			var color = {r: stream.readFloat(), g: stream.readFloat(), b: stream.readFloat(), a: stream.readFloat()};
 		} else {
-			var defaultColor = DefaultColors[type];
+			var defaultColor = this.renderLayer.viewer.defaultColors[type];
 			if (defaultColor == null) {
 				var color = {
 					r: 0,
@@ -537,7 +626,7 @@ export class GeometryLoader {
 		return color;
 	}
 
-	createObject(roid, oid, objectId, geometryIds, matrix, hasTransparency, type, aabb, inCompleteBuffer) {
+	createObject(roid, uniqueId, geometryIds, matrix, hasTransparency, type, aabb, inCompleteBuffer) {
 		if (this.state.mode == 0) {
 			console.log("Mode is still 0, should be 1");
 			return;
@@ -572,6 +661,65 @@ export class GeometryLoader {
 			mat3.invert(normalMatrix, normalMatrix);
 			mat3.transpose(normalMatrix, normalMatrix);
 		}
-		this.renderLayer.createObject(this.loaderId, roid, oid, objectId, geometryIds, matrix, normalMatrix, scaleMatrix, hasTransparency, type, aabb);
+		this.renderLayer.createObject(this.loaderId, roid, uniqueId, geometryIds, matrix, normalMatrix, scaleMatrix, hasTransparency, type, aabb);
+	}
+	
+	readStart(data) {
+		var start = data.readUTF8();
+
+		if (start != "BGS") {
+			console.error("Data does not start with BGS (" + start + ")");
+			return false;
+		}
+
+		this.protocolVersion = data.readByte();
+
+		if (this.protocolVersion != PROTOCOL_VERSION) {
+			console.error("Unimplemented version (protocol: " + this.protocolVersion + ", implemented: " + PROTOCOL_VERSION + ").\nUsually this means you need to either:\n\t- Update the BinarySerializers plugin bundle in BIMserver\n\t- Update your version of BIMsurfer 3");
+			return false;
+		}
+
+		this.multiplierToMm = data.readFloat();
+		data.align8();
+
+		var boundary = data.readDoubleArray(6);
+
+		this.state.mode = 1;
+		
+		return true;
+	}
+
+	initiateDownload() {
+		this.state = {
+			mode: 0,
+			nrObjectsRead: 0,
+			nrObjects: 0
+		};
+	}
+	
+	start() {
+		if (this.renderLayer.progressListener != null) {
+			this.renderLayer.progressListener(0);
+		}
+		
+		if (this.onStart != null) {
+			this.onStart();
+		}
+		var obj = [];
+
+		this.initiateDownload();
+		
+		var loaderSettings = JSON.parse(JSON.stringify(this.loaderSettings));
+
+		return this.promise;
+	}
+	
+	readEnd(data) {
+		// This is the end of the binary stream, but there is one more message on the line, which is the end of the wrapping stream..., so that's when we close it all
+	}
+	
+	// This promise is fired as soon as the GeometryLoader is done
+	getPromise() {
+		return this.promise;
 	}
 }

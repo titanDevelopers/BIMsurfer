@@ -70,6 +70,7 @@ export class ProgramManager {
 			uniforms: [
 				"projectionMatrix",
 				"viewNormalMatrix",
+				"postProcessingTranslation",
 				"viewMatrix",
 				"sectionPlane"
 			],
@@ -83,6 +84,7 @@ export class ProgramManager {
 				],
 			uniforms: [
 				"projectionMatrix",
+				"postProcessingTranslation",
 				"viewMatrix",
 				"sectionPlane"
 				],
@@ -107,6 +109,7 @@ export class ProgramManager {
 				"matrix",
 				"inputColor",
 				"projectionMatrix",
+				"postProcessingTranslation",
 				"viewMatrix",
 				"aspect",
 				"thickness"
@@ -215,7 +218,7 @@ export class ProgramManager {
 					for (var attribute of setup.attributes) {
 						let res = programInfo.attribLocations[attribute] = this.gl.getAttribLocation(shaderProgram, attribute);
 						if (res === -1) {
-							console.error("Missing attribute location", attribute, vertexShader, this.keyToJson(key));
+							console.error("Missing attribute location", attribute, vertexShaderSource, this.keyToJson(key));
 							debugger;
 						}
 					}
@@ -225,7 +228,7 @@ export class ProgramManager {
 					for (var uniform of setup.uniforms) {
 						let res = programInfo.uniformLocations[uniform] = this.gl.getUniformLocation(shaderProgram, uniform);
 						if (res === null) {
-							console.error("Missing uniform location", uniform, vertexShader, this.keyToJson(key));
+							console.error("Missing uniform location", uniform, vertexShaderSource, this.keyToJson(key));
 							debugger;
 						}
 					}

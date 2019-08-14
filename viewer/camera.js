@@ -2,8 +2,8 @@ import * as mat4 from "./glmatrix/mat4.js";
 import * as mat3 from "./glmatrix/mat3.js";
 import * as vec3 from "./glmatrix/vec3.js";
 
-import {Perspective} from './perspective.js'
-import {Orthographic} from './orthographic.js'
+import {Perspective} from "./perspective.js";
+import {Orthographic} from "./orthographic.js";
 
 var tempMat4 = mat4.create();
 var tempMat4b = mat4.create();
@@ -14,6 +14,8 @@ var tempVec3d = vec3.create();
 var tempVec3e = vec3.create();
 
 var tmp_modelBounds = vec3.create();
+
+var YAW_MATRIX = mat4.create();
 
 /**
  A **Camera** defines viewing and projection transforms for its Viewer.
@@ -40,6 +42,8 @@ export class Camera {
         this._target = vec3.fromValues(0.0, 0.0, 0.0); // World-space point-of-interest
         this._up = vec3.fromValues(0.0, 1.0, 0.0); // Camera's "up" vector, always orthogonal to eye->target
         this._center = vec3.copy(vec3.create(), this._target);
+        this._negatedCenter = vec3.create();
+        vec3.negate(this._negatedCenter, this._center);
 
         this._worldAxis = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
         this._worldUp = vec3.fromValues(0.0, 1.0, 0.0); // Direction of "up" in World-space
@@ -56,6 +60,9 @@ export class Camera {
 
         // Until there is a proper event handler mechanism, just do it manually.
         this.listeners = [];
+        this.lowVolumeListeners = [];
+
+        this._orbitting = false;
     }
 
     lock() {
@@ -69,12 +76,15 @@ export class Camera {
 
     _setDirty() {
         this._dirty = true;
-        this.viewer.dirty = true;
+        this.viewer.dirty = 2;
     }
 
     setModelBounds(bounds) {
         this._modelBounds = [];
 
+        this.perspective.setModelBounds(bounds);
+        this.orthographic.setModelBounds(bounds);
+        
         // Store aabb calculated} from points
         let a = vec3.fromValues(+Infinity, +Infinity, +Infinity);
         let b = vec3.fromValues(-Infinity, -Infinity, -Infinity);
@@ -103,6 +113,8 @@ export class Camera {
         vec3.scale(a, a, 0.5);
 
         this._center.set(a);
+        vec3.negate(this._negatedCenter, this._center);
+        this._dirty = true;
     }
 
     _build() {
@@ -115,7 +127,7 @@ export class Camera {
 
             mat4.lookAt(this._viewMatrix, this._eye, this._target, this._up);
             mat4.identity(tempMat4);
-            mat4.multiply(this._viewMatrix, tempMat4, this._viewMatrix);
+            mat4.multiply(this._viewMatrix, tempMat4, this._viewMatrix); // Why?
             mat3.fromMat4(tempMat4b, this._viewMatrix);
             mat3.invert(tempMat4b, tempMat4b);
             mat3.transpose(this._viewNormalMatrix, tempMat4b);
@@ -139,6 +151,8 @@ export class Camera {
 
             this.perspective.near = near;
             this.perspective.far = far;
+            this.orthographic.near = near;
+            this.orthographic.far = far;
 
             mat4.invert(this._viewMatrixInverted, this._viewMatrix);
             mat4.multiply(this._viewProjMatrix, this.projMatrix, this._viewMatrix);
@@ -229,6 +243,7 @@ export class Camera {
         } else {
             console.error("Unsupported projectionType: " + projectionType);
         }
+        this.viewer.dirty = 2;
     }
 
     /**
@@ -256,6 +271,9 @@ export class Camera {
     set eye(eye) {
         this._eye.set(eye || [0.0, 0.0, -10.0]);
         this._setDirty();
+    	for (var listener of this.lowVolumeListeners) {
+    		listener();
+    	}
     }
 
     /**
@@ -273,6 +291,9 @@ export class Camera {
     set target(target) {
         this._target.set(target || [0.0, 0.0, 0.0]);
         this._setDirty();
+    	for (var listener of this.lowVolumeListeners) {
+    		listener();
+    	}
     }
 
     /**
@@ -285,6 +306,7 @@ export class Camera {
 
     set center(v) {
         this._center.set(v);
+        vec3.negate(this._negatedCenter, this._center);
         this.listeners.forEach((fn) => { fn(); });
     }
 
@@ -415,26 +437,34 @@ export class Camera {
         return this._worldForward;
     }
 
+    set orbitting(orbitting) {
+    	if (this._orbitting != orbitting) {
+        	for (var listener of this.lowVolumeListeners) {
+        		listener();
+        	}
+    	}
+    	this._orbitting = orbitting;
+    }
+
+    get orbitting() {
+    	return this._orbitting;
+    }
+    
     /**
      Rotates the eye position about the target position, pivoting around the up vector.
 
      @param {Number} degrees Angle of rotation in degrees
      */
     orbitYaw(degrees) {
-        
         // @todo, these functions are not efficient nor numerically stable, but simple to understand.
         
-        var T1 = mat4.fromTranslation(mat4.create(), this._center);
-        var R = mat4.fromRotation(mat4.create(), degrees * 0.0174532925 * 2, this._worldUp);
-        var T2 = mat4.fromTranslation(mat4.create(), vec3.negate(vec3.create(), this._center));
-
-        vec3.transformMat4(this._eye, this._eye, T2);
-        vec3.transformMat4(this._eye, this._eye, R);
-        vec3.transformMat4(this._eye, this._eye, T1);
-
-        vec3.transformMat4(this._target, this._target, T2);
-        vec3.transformMat4(this._target, this._target, R);
-        vec3.transformMat4(this._target, this._target, T1);
+    	mat4.identity(YAW_MATRIX);
+    	mat4.translate(YAW_MATRIX, YAW_MATRIX, this._center);
+    	mat4.rotate(YAW_MATRIX, YAW_MATRIX, degrees * 0.0174532925 * 2, this._worldUp);
+    	mat4.translate(YAW_MATRIX, YAW_MATRIX, this._negatedCenter);
+    	
+        vec3.transformMat4(this._eye, this._eye, YAW_MATRIX);
+        vec3.transformMat4(this._target, this._target, YAW_MATRIX);
 
         this._setDirty();
         return;
@@ -558,6 +588,8 @@ export class Camera {
     zoom(delta, canvasPos) { // Translate 'eye' by given increment on (eye->target) vector
         // @todo: also not efficient
 
+    	this.orthographic.zoom(delta);
+    	
         let [x,y] = canvasPos;
         vec3.set(tempVec3, x / this.viewer.width * 2 - 1, - y / this.viewer.height * 2 + 1, 1.);
         vec3.transformMat4(tempVec3, tempVec3, this.projection.projMatrixInverted);
@@ -570,6 +602,14 @@ export class Camera {
         vec3.add(this._target, this._target, tempVec3);
 
         this._setDirty();
+
+        this.updateLowVolumeListeners();
+    }
+    
+    updateLowVolumeListeners() {
+        for (var listener of this.lowVolumeListeners) {
+        	listener();
+        }
     }
 
     /**
@@ -602,7 +642,7 @@ export class Camera {
 
     restore(params) {
         if (params.type) {
-            this.projectionType = type;
+            this.projectionType = params.type;
         }
         if (this._projection instanceof Perspective && params.fovy) {
             this._projection.fov = params.fovy;

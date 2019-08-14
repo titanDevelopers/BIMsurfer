@@ -9,15 +9,19 @@
  * @class FreezableSet
  */
 export class FreezableSet {
-    constructor() {
+    constructor(compareFunction) {
+    	this.compareFunction = compareFunction;
+    	this._originalOrderSet = new Set();
         this._set = new Set();
         this._update = true;
         this._build();
     }
 
     _build() {
-        let a = Array.from(this._set);
-        a.sort();
+        let a = Array.from(this._originalOrderSet);
+        a.sort(this.compareFunction);
+        // Store the sorted set (Sets do maintain insertion order)
+        this._set = new Set(a);
         this._string = a.join(",");
     }
 
@@ -31,16 +35,17 @@ export class FreezableSet {
 
     get size() {
         // Don't know link} from Set.prototype, see if() below
-        return this._set.size;
+        return this._originalOrderSet.size;
     }
 
     batch(fn) {
     	return new Promise((resolve, reject) => {
     		this._update = false;
-    		fn();
-    		this._build();
-    		this._update = true;
-    		resolve();
+    		fn().then(() => {
+    			this._build();
+    			this._update = true;
+    			resolve();
+    		});
     	});
     }
 }
@@ -50,7 +55,7 @@ let props = Object.getOwnPropertyDescriptors(Set.prototype);
 Object.getOwnPropertyNames(Set.prototype).forEach((name) => {
     if (!props[name].get) {
         FreezableSet.prototype[name] = function(...args) {
-            let r = this._set[name](...args);
+            let r = this._originalOrderSet[name](...args);
             // Rebuild the string representation after every modification
             if (this._update && name !== 'has') {
                 this._build();

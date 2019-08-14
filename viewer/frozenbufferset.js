@@ -1,5 +1,5 @@
 import {AbstractBufferSet} from "./abstractbufferset.js";
-import {Utils} from "./utils.js"
+import {Utils} from "./utils.js";
 
 /**
  * @ignore
@@ -8,9 +8,9 @@ export class FrozenBufferSet extends AbstractBufferSet {
     constructor(
     	viewer,
         originalBuffer,
-        positionBuffer, normalBuffer, colorBuffer, pickColorBuffer, indexBuffer,				
+        positionBuffer, normalBuffer, colorBuffer, pickColorBuffer, indexBuffer, lineIndexBuffer,				
         color, colorHash,
-        nrIndices, nrNormals, nrPositions, nrColors,
+        nrIndices, nrLineIndices, nrNormals, nrPositions, nrColors,
         vao, vaoPick,
         hasTransparency, reuse, owner, manager, 
 
@@ -19,7 +19,7 @@ export class FrozenBufferSet extends AbstractBufferSet {
     {
         super(viewer);
 
-        this.geometryIdToIndex = originalBuffer ? originalBuffer.geometryIdToIndex : null;
+        this.uniqueIdToIndex = originalBuffer ? originalBuffer.uniqueIdToIndex : null;
         // @todo make these something like LRU caches?
         this.visibleRanges = new Map();
         this.lineIndexBuffers = new Map();
@@ -29,11 +29,13 @@ export class FrozenBufferSet extends AbstractBufferSet {
         this.colorBuffer = colorBuffer;
         this.pickColorBuffer = pickColorBuffer;
         this.indexBuffer = indexBuffer;
+        this.lineIndexBuffer = lineIndexBuffer;
 
         this.color = color;
         this.colorHash = colorHash;
 
         this.nrIndices = nrIndices;
+        this.nrLineIndices = nrLineIndices;
         this.nrNormals = nrNormals;
         this.nrPositions = nrPositions;
         this.nrColors = nrColors;
@@ -54,7 +56,19 @@ export class FrozenBufferSet extends AbstractBufferSet {
         this.instanceNormalMatricesBuffer = null;
         this.instancePickColorsBuffer = null;
     }
+    
+    update(nrIndices, nrPositions, nrNormals, nrColors) {
+        this.nrIndices = nrIndices;
+        this.nrNormals = nrNormals;
+        this.nrPositions = nrPositions;
+        this.nrColors = nrColors;
+        this.dirty = true;
+    }
 
+    finalize() {
+    	
+    }
+    
     // Sets reuse instances
     setObjects(gl, objects) {
         this.objects = objects;
@@ -98,12 +112,14 @@ export class FrozenBufferSet extends AbstractBufferSet {
             this.normalBuffer,
             this.colorBuffer,
             this.pickColorBuffer,
-            this.indexBuffer,
+			this.indexBuffer,
+			this.lineIndexBuffer,
 
             null,
             null,
 
-            this.indexBuffer.N,
+			this.indexBuffer.N,
+			this.lineIndexBuffer.N,
             this.normalBuffer.N,
             this.positionBuffer.N,
             this.colorBuffer.N,
