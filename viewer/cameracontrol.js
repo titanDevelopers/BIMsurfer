@@ -153,8 +153,8 @@ export class CameraControl {
                 if (e.shiftKey) {
                     this.mouseDownTime = 0;
                     if (this.viewer.enableSectionPlane({
-                            canvasPos: [this.lastX, this.lastY]
-                        })) {
+                        canvasPos: [this.lastX, this.lastY]
+                    })) {
                         this.dragMode = DRAG_SECTION;
                     } else if (!this.viewer.sectionPlaneIsDisabled) {
                         this.viewer.disableSectionPlane();
@@ -194,148 +194,148 @@ export class CameraControl {
                             this.viewer.camera.center = center_vp;
                         }
                     }
-                    // }
-                    break;
-                    case 2:
-                        this.dragMode = DRAG_PAN;
-                    break;
-                    default:
-                    break;
                 }
-                this.over = true;
-                // Changed: for multiselect is used Ctrl key
-                if (this.dragMode == DRAG_PAN || e.ctrlKey) {
-                    e.preventDefault();
-                }
+                break;
+            case 2:
+                this.dragMode = DRAG_PAN;
+                break;
+            default:
+                break;
         }
-
-        /**
-         * @private
-         */
-        canvasMouseUp(e) {
-            this.camera.orbitting = false;
-            this.viewer.overlay.update();
-            this.getCanvasPosFromEvent(e, this.mousePos);
-
-            let dt = e.timeStamp - this.mouseDownTime;
-            this.mouseDown = false;
-
-            switch (e.which) {
-                case 1:
-                    if (dt < 500. && this.closeEnoughCanvas(this.mouseDownPos, this.mousePos)) {
-                        var viewObject = this.viewer.pick({
-                            canvasPos: this.mousePos,
-                            // Changed: for multiselect is used Ctrl key
-                            shiftKey: e.ctrlKey
-                        });
-                        if (viewObject && viewObject.object) {
-                            console.log("Picked", viewObject.object);
-                        }
-                        this.viewer.drawScene();
-                    }
-                    break;
-            }
+        this.over = true;
+        // Changed: for multiselect is used Ctrl key
+        if (this.dragMode == DRAG_PAN || e.ctrlKey) {
             e.preventDefault();
-        }
-
-        /**
-         * @private
-         */
-        canvasWheel(e) {
-            this.getCanvasPosFromEvent(e, this.mousePos);
-            var delta = Math.max(-1, Math.min(1, -e.deltaY * 40));
-            if (delta === 0) {
-                return;
-            }
-            var d = delta / Math.abs(delta);
-            var zoom = -d * this.getZoomRate() * this.mousePanSensitivity;
-            this.camera.zoom(zoom, this.mousePos);
-            e.preventDefault();
-        }
-
-        /**
-         * @private
-         */
-        closeEnoughCanvas(p, q) {
-            return p[0] >= (q[0] - this.canvasPickTolerance) &&
-                p[0] <= (q[0] + this.canvasPickTolerance) &&
-                p[1] >= (q[1] - this.canvasPickTolerance) &&
-                p[1] <= (q[1] + this.canvasPickTolerance);
-        }
-
-        /**
-         * @private
-         */
-        canvasMouseMove(e) {
-            if (!this.over) {
-                return;
-            }
-            // Changed: for section use shift
-            if (this.mouseDown || e.shiftKey) {
-                this.getCanvasPosFromEvent(e, this.mousePos);
-                if (this.dragMode == DRAG_SECTION) {
-                    this.viewer.moveSectionPlane({
-                        canvasPos: this.mousePos
-                    });
-                    // Changed: for section use shift
-                } else if (e.shiftKey) {
-                    this.viewer.positionSectionPlaneWidget({
-                        canvasPos: this.mousePos
-                    });
-                } else {
-                    var x = this.mousePos[0];
-                    var y = this.mousePos[1];
-                    var xDelta = (x - this.lastX);
-                    var yDelta = (y - this.lastY);
-                    this.lastX = x;
-                    this.lastY = y;
-                    if (this.dragMode == DRAG_ORBIT) {
-                        let f = 0.5;
-                        if (xDelta !== 0) {
-                            this.camera.orbitYaw(-xDelta * this.mouseOrbitSensitivity * f);
-                        }
-                        if (yDelta !== 0) {
-                            this.camera.orbitPitch(yDelta * this.mouseOrbitSensitivity * f);
-                        }
-                        this.camera.orbitting = true;
-                    } else if (this.dragMode == DRAG_PAN) {
-                        var f = this.getEyeLookDist() / 600;
-                        this.camera.pan([xDelta * f, yDelta * this.mousePanSensitivity * f, 0.0]);
-                    }
-                }
-            }
-            e.preventDefault();
-        }
-
-        /**
-         * @private
-         */
-        documentMouseUp(e) {
-            this.mouseDown = false;
-            // Potential end-of-pan
-            if (this.dragMode == DRAG_PAN) {
-                this.camera.updateLowVolumeListeners();
-            }
-            this.dragMode = DRAG_ORBIT;
-        }
-
-        getEyeLookDist() {
-            var vec = vec3.create();
-            return vec3.length(vec3.subtract(vec, this.viewer.camera.target, this.viewer.camera.eye));
-        }
-
-        /**
-         * @private
-         */
-        cleanup() {
-            var canvas = this.canvas;
-            document.removeEventListener("mouseup", this.documentMouseUpHandler);
-            canvas.removeEventListener("mousedown", this.canvasMouseDownHandler);
-            canvas.removeEventListener("mouseup", this.canvasMouseUpHandler);
-            document.removeEventListener("mouseup", this.documentMouseUpHandler);
-            canvas.removeEventListener("mouseenter", this.canvasMouseEnterHandler);
-            canvas.removeEventListener("mouseleave", this.canvasMouseLeaveHandler);
-            canvas.removeEventListener("mousemove", this.canvasMouseMoveHandler);
-            canvas.removeEventListener("wheel", this.canvasMouseWheelHandler);
         }
     }
+
+    /**
+     * @private
+     */
+    canvasMouseUp(e) {
+        this.camera.orbitting = false;
+        this.viewer.overlay.update();
+        this.getCanvasPosFromEvent(e, this.mousePos);
+
+        let dt = e.timeStamp - this.mouseDownTime;
+        this.mouseDown = false;
+
+        switch (e.which) {
+            case 1:
+                if (dt < 500. && this.closeEnoughCanvas(this.mouseDownPos, this.mousePos)) {
+                    var viewObject = this.viewer.pick({
+                        canvasPos: this.mousePos,
+                        // Changed: for multiselect is used Ctrl key
+                        shiftKey: e.ctrlKey
+                    });
+                    if (viewObject && viewObject.object) {
+                        console.log("Picked", viewObject.object);
+                    }
+                    this.viewer.drawScene();
+                }
+                break;
+        }
+        e.preventDefault();
+    }
+
+    /**
+     * @private
+     */
+    canvasWheel(e) {
+        this.getCanvasPosFromEvent(e, this.mousePos);
+        var delta = Math.max(-1, Math.min(1, -e.deltaY * 40));
+        if (delta === 0) {
+            return;
+        }
+        var d = delta / Math.abs(delta);
+        var zoom = -d * this.getZoomRate() * this.mousePanSensitivity;
+        this.camera.zoom(zoom, this.mousePos);
+        e.preventDefault();
+    }
+
+    /**
+     * @private
+     */
+    closeEnoughCanvas(p, q) {
+        return p[0] >= (q[0] - this.canvasPickTolerance) &&
+            p[0] <= (q[0] + this.canvasPickTolerance) &&
+            p[1] >= (q[1] - this.canvasPickTolerance) &&
+            p[1] <= (q[1] + this.canvasPickTolerance);
+    }
+
+    /**
+     * @private
+     */
+    canvasMouseMove(e) {
+        if (!this.over) {
+            return;
+        }
+        // Changed: for section use shift
+        if (this.mouseDown || e.shiftKey) {
+            this.getCanvasPosFromEvent(e, this.mousePos);
+            if (this.dragMode == DRAG_SECTION) {
+                this.viewer.moveSectionPlane({
+                    canvasPos: this.mousePos
+                });
+                // Changed: for section use shift
+            } else if (e.shiftKey) {
+                this.viewer.positionSectionPlaneWidget({
+                    canvasPos: this.mousePos
+                });
+            } else {
+                var x = this.mousePos[0];
+                var y = this.mousePos[1];
+                var xDelta = (x - this.lastX);
+                var yDelta = (y - this.lastY);
+                this.lastX = x;
+                this.lastY = y;
+                if (this.dragMode == DRAG_ORBIT) {
+                    let f = 0.5;
+                    if (xDelta !== 0) {
+                        this.camera.orbitYaw(-xDelta * this.mouseOrbitSensitivity * f);
+                    }
+                    if (yDelta !== 0) {
+                        this.camera.orbitPitch(yDelta * this.mouseOrbitSensitivity * f);
+                    }
+                    this.camera.orbitting = true;
+                } else if (this.dragMode == DRAG_PAN) {
+                    var f = this.getEyeLookDist() / 600;
+                    this.camera.pan([xDelta * f, yDelta * this.mousePanSensitivity * f, 0.0]);
+                }
+            }
+        }
+        e.preventDefault();
+    }
+
+    /**
+     * @private
+     */
+    documentMouseUp(e) {
+        this.mouseDown = false;
+        // Potential end-of-pan
+        if (this.dragMode == DRAG_PAN) {
+            this.camera.updateLowVolumeListeners();
+        }
+        this.dragMode = DRAG_ORBIT;
+    }
+
+    getEyeLookDist() {
+        var vec = vec3.create();
+        return vec3.length(vec3.subtract(vec, this.viewer.camera.target, this.viewer.camera.eye));
+    }
+
+    /**
+     * @private
+     */
+    cleanup() {
+        var canvas = this.canvas;
+        document.removeEventListener("mouseup", this.documentMouseUpHandler);
+        canvas.removeEventListener("mousedown", this.canvasMouseDownHandler);
+        canvas.removeEventListener("mouseup", this.canvasMouseUpHandler);
+        document.removeEventListener("mouseup", this.documentMouseUpHandler);
+        canvas.removeEventListener("mouseenter", this.canvasMouseEnterHandler);
+        canvas.removeEventListener("mouseleave", this.canvasMouseLeaveHandler);
+        canvas.removeEventListener("mousemove", this.canvasMouseMoveHandler);
+        canvas.removeEventListener("wheel", this.canvasMouseWheelHandler);
+    }
+}
