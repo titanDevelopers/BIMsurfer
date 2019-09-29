@@ -34,6 +34,7 @@ export class RenderLayer {
 		this.instanceSelectionData = new Uint32Array(128);
 		this.previousInstanceVisibilityState = null;
 
+		this.lines = null;
 		this.loaders = new Map();
 		this.bufferTransformer = new BufferTransformer(this.settings, viewer.vertexQuantization);
 		this.nrPrimitivesLoaded = 0;
@@ -219,7 +220,7 @@ export class RenderLayer {
 					}
 				}
 			}
-			var pickColor = this.viewer.getPickColor(object.id);
+			var pickColor = this.viewer.getPickColor(object.uniqueId);
 			var lenObjectPickColors = (geometry.positions.length / 3);
 			for (var i=0; i<lenObjectPickColors; i++) {
 				buffer.pickColors.set(pickColor, buffer.pickColorsIndex);
@@ -698,6 +699,16 @@ export class RenderLayer {
 		}
 
 		return newBuffer;
+	}
+
+	renderLines() {
+		if (this.lines) {
+			let bufferManager = this.gpuBufferManager;
+			let viewer = bufferManager.viewer;
+			this.lines.renderStart(viewer, this);
+			this.lines.render(this.lineColour || outlineColor, selectionOutlineMatrix, this.lineWidth || 0.005);
+			this.lines.renderStop();
+		}
 	}
 
 	renderSelectionOutlines(ids, width, node) {
