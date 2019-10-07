@@ -77,7 +77,7 @@ export class GeometryLoader {
 		}
 		this.preparedBuffer.colors = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrColors, this.renderLayer.gl.ARRAY_BUFFER, 4, WebGL2RenderingContext.UNSIGNED_BYTE, "Uint8Array");
 		this.preparedBuffer.vertices = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.positionsIndex, this.renderLayer.gl.ARRAY_BUFFER, 3, this.settings.quantizeVertices ? WebGL2RenderingContext.SHORT : WebGL2RenderingContext.FLOAT, this.settings.quantizeVertices ? "Int16Array" : "Float32Array");
-		this.preparedBuffer.normals = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.normalsIndex, this.renderLayer.gl.ARRAY_BUFFER, 2, WebGL2RenderingContext.BYTE, "Int8Array");
+		this.preparedBuffer.normals = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.normalsIndex, this.renderLayer.gl.ARRAY_BUFFER, this.settings.quantizeNormals ? (this.settings.loaderSettings.octEncodeNormals ? 2 : 3) : 3, this.settings.quantizeNormals ? WebGL2RenderingContext.BYTE : WebGL2RenderingContext.FLOAT, this.settings.quantizeNormals ? "Int8Array" : "Float32Array");
 		this.preparedBuffer.pickColors = Utils.createEmptyBuffer(this.renderLayer.gl, this.preparedBuffer.nrColors, this.renderLayer.gl.ARRAY_BUFFER, 4, WebGL2RenderingContext.UNSIGNED_BYTE, "Uint8Array");
 
 		this.preparedBuffer.uniqueIdToIndex = new AvlTree(this.renderLayer.viewer.inverseUniqueIdCompareFunction);
@@ -164,7 +164,7 @@ export class GeometryLoader {
 			var nrObjectColors = nrVertices / 3 * 4;
 
 			if (!createdObjects) {
-				loadedViewObjects.push(unqueId);
+				loadedViewObjects.push(uniqueId);
 				const viewObject = {
 					type: "Annotation",
 					pickId: uniqueId
@@ -198,7 +198,6 @@ export class GeometryLoader {
 			};
 			this.preparedBuffer.uniqueIdToIndex.set(uniqueId, [meta]);
 			collectedMetaObjects.push(meta);
-			
 			if (colorPackSize == 0) {
 				// Generate default colors for this object
 				var defaultColor = this.renderLayer.viewer.defaultColors[object.type];
@@ -272,6 +271,11 @@ export class GeometryLoader {
 			// @todo a bit ugly, but only in this case the AABB for the on-demand loaded object
 			// is computed.
 			if (loadedViewObjects.length) {
+				// @todo update this in the annotation generator
+				collectedMetaObjects.forEach((elem)=>{
+					elem.start *= 3;
+					elem.length *= 3;
+				});
 				for (var i = 0; i < collectedMetaObjects.length; ++i) {
 					const meta = collectedMetaObjects[i];
 					const oid = loadedViewObjects[i];
@@ -279,25 +283,16 @@ export class GeometryLoader {
 					aabb.fill(Infinity);
 					aabb.subarray(3).fill(-Infinity);
 					for (var j = meta.minIndex; j <= meta.maxIndex; j += 3) {
-						if (floats[j+0] < aabb[0]) {
-							aabb[0] = floats[j+0];
+						const xyz = floats.subarray(3*j, 3*j+3);
+						for (let k = 0; k < 3; ++k) {
+							if (xyz[k] < aabb[k]) {
+								aabb[k] = xyz[k];
+							}
+							if (xyz[k] > aabb[k+3]) {
+								aabb[k+3] = xyz[k];
+							}
 						}
-						if (floats[j+1] < aabb[1]) {
-							aabb[1] = floats[j+1];
-						}
-						if (floats[j+2] < aabb[2]) {
-							aabb[2] = floats[j+2];
-						}
-						if (floats[j+0] > aabb[3]) {
-							aabb[3] = floats[j+0];
-						}
-						if (floats[j+1] > aabb[4]) {
-							aabb[4] = floats[j+1];
-						}
-						if (floats[j+2] > aabb[5]) {
-							aabb[5] = floats[j+2];
-						}
-					}				
+					}
 					var globalizedAabb = Utils.transformBounds(aabb, this.renderLayer.viewer.globalTranslationVector);			
 					const viewobj = this.renderLayer.viewer.getViewObject(oid);
 					viewobj.aabb = aabb;
@@ -307,14 +302,29 @@ export class GeometryLoader {
 
 		}
 		
-		// Debugging oct-encoding
-//		var octNormals = new Int8Array(stream.dataView.buffer, stream.pos, ((normalsIndex / 3) * 2));
-//		for (var i=0; i<octNormals.length; i+=2) {
-//			console.log(Utils.octDecodeVec2([octNormals[i], octNormals[i+1]]));
-//		}
-		
-		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.normals, stream.dataView, stream.pos, ((normalsIndex / 3) * 2), true);
-		stream.pos += ((normalsIndex / 3) * 2);
+		if (this.settings.quantizeNormals) {
+			// Debugging oct-encoding
+//			var octNormals = new Int8Array(stream.dataView.buffer, stream.pos, ((normalsIndex / 3) * 2));
+//			for (var i=0; i<octNormals.length; i+=2) {
+//				console.log(octNormals[i], octNormals[i+1]);
+//				let normal = Utils.octDecodeVec2([octNormals[i], octNormals[i+1]]);
+////				if (this.lastNormal == null || this.lastNormal.toString() != normal.toString()) {
+////					console.log(normal);
+////				}
+//				this.lastNormal = normal;
+//			}
+
+			if (this.settings.loaderSettings.octEncodeNormals) {
+				Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.normals, stream.dataView, stream.pos, ((normalsIndex / 3) * 2), true);
+				stream.pos += ((normalsIndex / 3) * 2);
+			} else {
+				Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.normals, stream.dataView, stream.pos, normalsIndex, true);
+				stream.pos += normalsIndex;
+			}
+		} else {
+			Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.normals, stream.dataView, stream.pos, normalsIndex, true);
+			stream.pos += normalsIndex * 4;
+		}
 
 		Utils.updateBuffer(this.renderLayer.gl, this.preparedBuffer.pickColors, pickColors, 0, pickColors.i);
 
@@ -438,9 +448,11 @@ export class GeometryLoader {
 			// Object
 			var inPreparedBuffer = stream.readByte() == 1;
 			var oid = stream.readLong();
+			var uniqueId = oid;
 			if (this.loaderSettings.useUuidAndRid) {
 				let uuid = stream.readUuid();
 				let rid = stream.readInt();
+				uniqueId = uuid + (rid == 1 ? "" : "-" + rid);
 			}
 			var type = stream.readUTF8();
 			var nrColors = stream.readInt();
