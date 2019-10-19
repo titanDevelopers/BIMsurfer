@@ -18,4 +18,4 @@ Nový surfer:
 - prevziať jeho zmeny (tu nerobiť merge) -> https://help.github.com/en/articles/syncing-a-fork
 - merge aktuálneho tagu napr. (bimsurfer3-0.0.264)
 - v package.json zdvihnúť verziu (druhé číslo sa prevezme z tagu)
-- a dať pull request, po merge-i spustiť script **npm run package** (právo má len Lukáš Šefčík a Ján Slivka)
+- a dať pull request, po merge-i spustiť script **npm run package**
