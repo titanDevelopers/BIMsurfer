@@ -12,6 +12,8 @@ export const DRAG_SECTION = 0xfe03;
 export class CameraControl {
 
     constructor(viewer) {
+        // Changed: for new section
+        this.isSelectionEnabled = true;
 
         this.viewer = viewer;
 
@@ -226,7 +228,9 @@ export class CameraControl {
                     var viewObject = this.viewer.pick({
                         canvasPos: this.mousePos,
                         // Changed: for multiselect is used Ctrl key
-                        shiftKey: e.ctrlKey
+                        shiftKey: e.ctrlKey,
+                        // Changed: for new section
+                        select: this.isSelectionEnabled
                     });
                     if (viewObject && viewObject.object) {
                         console.log("Picked", viewObject.object);
@@ -311,6 +315,8 @@ export class CameraControl {
      * @private
      */
     documentMouseUp(e) {
+        // Changed: for new section
+        this.isSelectionEnabled = true;
         this.mouseDown = false;
         // Potential end-of-pan
         if (this.dragMode == DRAG_PAN) {
