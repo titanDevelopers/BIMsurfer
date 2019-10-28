@@ -1,4 +1,5 @@
 import * as vec3 from "./glmatrix/vec3.js";
+import * as vec4 from "./glmatrix/vec4.js";
 
 const X = vec3.fromValues(1., 0., 0.);
 const Y = vec3.fromValues(0., 1., 0.);
@@ -13,6 +14,8 @@ export class SectionPlaneHelper {
     constructor() {
         this.isSectionMoving = false;
         this.sectionIndex = -1;
+        this.coordinates = vec3.create();
+        this.normal = vec4.create();
     }
 
     setModelBounds(modelBounds) {
@@ -118,5 +121,31 @@ export class SectionPlaneHelper {
 
     isFreeSectionIndex() {
         return this.sectionIndex === FREE_SECTION_INDEX;
+    }
+
+    createDefaultCoordinates(coordinate) {
+        vec4.zero(this.coordinates);
+        this.coordinates[this.sectionIndex] = this.getDefaultCoordinate(coordinate, this.sectionIndex);
+        return this.coordinates;
+    }
+
+    createNormal() {
+        vec4.zero(this.normal);
+        this.normal[this.sectionIndex] = 1;
+        return this.normal;
+    }
+
+    createCenter(normal, coordinate, points) {
+        const number = Math.max(...normal.map(a => Math.abs(a)));
+        var index = normal.indexOf(number);
+        index = index === -1 ? normal.indexOf(-number) : index;
+        const indexValue = normal[index] > 0 ? 1 : -1;
+        const center = [
+            ((points[2][0] + points[0][0]) / 2),
+            ((points[2][1] + points[0][1]) / 2),
+            ((points[2][2] + points[0][2]) / 2)
+        ];
+        center[index] = coordinate * indexValue;
+        return center;
     }
 }

@@ -666,28 +666,13 @@ export class Viewer {
 
     // Changed: for new section
     moveSectionPlaneWidget(coordinate) {
-        let coordinates = vec3.create();
-        let index = this.sectionPlaneHelper.sectionIndex;
         if (!this.sectionPlaneHelper.isFreeSectionIndex()) {
-            let normal = new Float32Array(4);
-            normal[index] = 1;
-            coordinates[index] = this.sectionPlaneHelper.getDefaultCoordinate(coordinate, index);
-            this.positionSectionPlaneWidgetCore(normal, coordinates);
+            this.positionSectionPlaneWidgetCore(
+                this.sectionPlaneHelper.createNormal(),
+                this.sectionPlaneHelper.createDefaultCoordinates(coordinate));
         } else if (this.sectionPlaneHelper.isFreeSectionIndex() && this.ps && coordinate) {
-            let normal = [this.sectionPlaneValues2[0], this.sectionPlaneValues2[1], this.sectionPlaneValues2[2]];
-            const number = Math.max(...normal.map(a => Math.abs(a)));
-            index = normal.indexOf(number);
-            index = index === -1 ? normal.indexOf(-number) : index;
-            const indexValue = normal[index] > 0 ? 1 : -1;
-            const points = this.ps;
-            const center = [
-                ((points[2][0] + points[0][0]) / 2),
-                ((points[2][1] + points[0][1]) / 2),
-                ((points[2][2] + points[0][2]) / 2)
-            ];
-            center[index] = coordinate * indexValue;
-
-            this.positionSectionPlaneWidgetCore(normal, center);
+            var normal = [this.sectionPlaneValues2[0], this.sectionPlaneValues2[1], this.sectionPlaneValues2[2]];
+            this.positionSectionPlaneWidgetCore(normal, this.sectionPlaneHelper.createCenter(normal, coordinate, this.ps));
         }
     }
 

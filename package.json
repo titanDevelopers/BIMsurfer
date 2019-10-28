@@ -1,6 +1,6 @@
 {
     "name": "@slivka/surfer",
-    "version": "0.264.8",
+    "version": "0.264.9",
     "description": "BIMsurferV3",
     "scripts": {
         "remove-package": "del *.tgz",
