@@ -94,18 +94,12 @@ export class SectionPlaneHelper {
 
     getNormalSectionPlane(normal) {
         if (!this.isFreeSectionIndex()) {
-            this.clearNormalSectionPlane(normal);
+            vec4.zero(normal);
             normal[this.sectionIndex] = 1;
         } else if (this.isFreeSectionIndex() && this.lastNormal) {
             normal = this.lastNormal;
         }
         return normal;
-    }
-
-    clearNormalSectionPlane(normal) {
-        for (let index = 0; index < normal.length; index++) {
-            normal[index] = 0;
-        }
     }
 
     saveLastNormalSectionPlane(normal) {
