@@ -12,6 +12,8 @@ export const DRAG_SECTION = 0xfe03;
 export class CameraControl {
 
     constructor(viewer) {
+        // Changed: for new section
+        this.isSelectionEnabled = true;
 
         this.viewer = viewer;
 
@@ -124,7 +126,9 @@ export class CameraControl {
         if (e.key == "Shift") {
             if (state === "down") {
                 if (this.viewer.sectionPlaneIsDisabled) {
-                    this.viewer.positionSectionPlaneWidget({ canvasPos: [this.lastX, this.lastY] });
+                    this.viewer.positionSectionPlaneWidget({
+                        canvasPos: [this.lastX, this.lastY]
+                    });
                 }
             } else {
                 this.viewer.removeSectionPlaneWidget();
@@ -150,7 +154,9 @@ export class CameraControl {
                 // Changed: for section use shift
                 if (e.shiftKey) {
                     this.mouseDownTime = 0;
-                    if (this.viewer.enableSectionPlane({ canvasPos: [this.lastX, this.lastY] })) {
+                    if (this.viewer.enableSectionPlane({
+                        canvasPos: [this.lastX, this.lastY]
+                    })) {
                         this.dragMode = DRAG_SECTION;
                     } else if (!this.viewer.sectionPlaneIsDisabled) {
                         this.viewer.disableSectionPlane();
@@ -159,7 +165,10 @@ export class CameraControl {
                     this.viewer.removeSectionPlaneWidget();
                 } else {
                     this.dragMode = DRAG_ORBIT;
-                    let picked = this.viewer.pick({ canvasPos: [this.lastX, this.lastY], select: false });
+                    let picked = this.viewer.pick({
+                        canvasPos: [this.lastX, this.lastY],
+                        select: false
+                    });
                     if (picked && picked.coordinates && picked.object) {
                         this.viewer.camera.center = picked.coordinates;
                     } else {
@@ -177,7 +186,7 @@ export class CameraControl {
 
                         if (!isv) {
                             let [x, y] = this.mousePos;
-                            vec3.set(center_vp, x / this.viewer.width * 2 - 1, - y / this.viewer.height * 2 + 1, 1.);
+                            vec3.set(center_vp, x / this.viewer.width * 2 - 1, -y / this.viewer.height * 2 + 1, 1.);
                             vec3.transformMat4(center_vp, center_vp, this.camera.viewProjMatrixInverted);
                             vec3.subtract(center_vp, center_vp, this.camera.eye);
                             vec3.normalize(center_vp, center_vp);
@@ -219,7 +228,9 @@ export class CameraControl {
                     var viewObject = this.viewer.pick({
                         canvasPos: this.mousePos,
                         // Changed: for multiselect is used Ctrl key
-                        shiftKey: e.ctrlKey
+                        shiftKey: e.ctrlKey,
+                        // Changed: for new section
+                        select: this.isSelectionEnabled
                     });
                     if (viewObject && viewObject.object) {
                         console.log("Picked", viewObject.object);
@@ -267,10 +278,14 @@ export class CameraControl {
         if (this.mouseDown || e.shiftKey) {
             this.getCanvasPosFromEvent(e, this.mousePos);
             if (this.dragMode == DRAG_SECTION) {
-                this.viewer.moveSectionPlane({ canvasPos: this.mousePos });
+                this.viewer.moveSectionPlane({
+                    canvasPos: this.mousePos
+                });
                 // Changed: for section use shift
             } else if (e.shiftKey) {
-                this.viewer.positionSectionPlaneWidget({ canvasPos: this.mousePos });
+                this.viewer.positionSectionPlaneWidget({
+                    canvasPos: this.mousePos
+                });
             } else {
                 var x = this.mousePos[0];
                 var y = this.mousePos[1];
@@ -300,6 +315,8 @@ export class CameraControl {
      * @private
      */
     documentMouseUp(e) {
+        // Changed: for new section
+        this.isSelectionEnabled = true;
         this.mouseDown = false;
         // Potential end-of-pan
         if (this.dragMode == DRAG_PAN) {

@@ -21,6 +21,7 @@ import { AvlTree } from "./collections/avltree.js";
 import { COLOR_FLOAT_DEPTH_NORMAL, COLOR_ALPHA_DEPTH } from './renderbuffer.js';
 import { WSQuad } from './wsquad.js';
 import { EventHandler } from "./eventhandler.js";
+import { SectionPlaneHelper } from "./sectionplanehelper.js";
 
 var tmp_unproject = vec3.create();
 
@@ -62,6 +63,8 @@ const tmp_section_dir_2d = vec4.create();
 export class Viewer {
 
     constructor(canvas, settings, stats, width, height) {
+        // Changed: for new section
+        this.sectionPlaneHelper = new SectionPlaneHelper();
         this.width = width;
         this.height = height;
 
@@ -661,56 +664,75 @@ export class Viewer {
         }
     }
 
+    // Changed: for new section
+    moveSectionPlaneWidget(coordinate) {
+        if (!this.sectionPlaneHelper.isFreeSectionIndex()) {
+            this.positionSectionPlaneWidgetCore(
+                this.sectionPlaneHelper.createNormal(),
+                this.sectionPlaneHelper.createDefaultCoordinates(coordinate));
+        } else if (this.sectionPlaneHelper.isFreeSectionIndex() && this.ps && coordinate) {
+            var normal = [this.sectionPlaneValues2[0], this.sectionPlaneValues2[1], this.sectionPlaneValues2[2]];
+            this.positionSectionPlaneWidgetCore(normal, this.sectionPlaneHelper.createCenter(normal, coordinate, this.ps));
+        }
+    }
+
     positionSectionPlaneWidget(params) {
         let p = this.pick({ canvasPos: params.canvasPos, select: false });
-        if (p.normal && p.coordinates) {
-            let ref = null;
-            if (Math.abs(vec3.dot(p.normal, Z)) < 0.9) {
-                ref = Z;
-            } else {
-                ref = X;
-            }
-            vec3.cross(tmp_sectionU, p.normal, ref);
-            vec3.cross(tmp_sectionV, p.normal, tmp_sectionU);
-            vec3.scale(tmp_sectionU, tmp_sectionU, 500.);
-            vec3.scale(tmp_sectionV, tmp_sectionV, 500.);
+        if ((p.normal && p.coordinates && p.object)) {
+            p.normal = this.sectionPlaneHelper.getNormalSectionPlane(p.normal);
+            p.coordinates = this.sectionPlaneHelper.getCoordinatesSectionPlane(p.coordinates);
+            this.positionSectionPlaneWidgetCore(p.normal, p.coordinates);
+        }
+    }
 
-            // ---
+    positionSectionPlaneWidgetCore(normal, coordinates) {
+        let scale = this.sectionPlaneHelper.getScaleSectionPlane(normal);
+        let ref = this.sectionPlaneHelper.getRefSectionPlane(normal);
+        vec3.cross(tmp_sectionU, normal, ref);
+        vec3.cross(tmp_sectionV, normal, tmp_sectionU);
+        vec3.scale(tmp_sectionU, tmp_sectionU, scale.U);
+        vec3.scale(tmp_sectionV, tmp_sectionV, scale.V);
+        // ---
 
-            vec3.add(tmp_sectionA, tmp_sectionU, p.coordinates);
-            vec3.add(tmp_sectionB, tmp_sectionU, p.coordinates);
+        vec3.add(tmp_sectionA, tmp_sectionU, coordinates);
+        vec3.add(tmp_sectionB, tmp_sectionU, coordinates);
 
-            vec3.negate(tmp_sectionU, tmp_sectionU);
+        vec3.negate(tmp_sectionU, tmp_sectionU);
 
-            vec3.add(tmp_sectionC, tmp_sectionU, p.coordinates);
-            vec3.add(tmp_sectionD, tmp_sectionU, p.coordinates);
+        vec3.add(tmp_sectionC, tmp_sectionU, coordinates);
+        vec3.add(tmp_sectionD, tmp_sectionU, coordinates);
 
-            // ---
+        // ---
 
-            vec3.add(tmp_sectionA, tmp_sectionV, tmp_sectionA);
-            vec3.add(tmp_sectionC, tmp_sectionV, tmp_sectionC);
+        vec3.add(tmp_sectionA, tmp_sectionV, tmp_sectionA);
+        vec3.add(tmp_sectionC, tmp_sectionV, tmp_sectionC);
 
-            vec3.negate(tmp_sectionV, tmp_sectionV);
+        vec3.negate(tmp_sectionV, tmp_sectionV);
 
-            vec3.add(tmp_sectionB, tmp_sectionV, tmp_sectionB);
-            vec3.add(tmp_sectionD, tmp_sectionV, tmp_sectionD);
+        vec3.add(tmp_sectionB, tmp_sectionV, tmp_sectionB);
+        vec3.add(tmp_sectionD, tmp_sectionV, tmp_sectionD);
 
-            // ---
+        // ---
 
-            let ps = [tmp_sectionA, tmp_sectionB, tmp_sectionD, tmp_sectionC, tmp_sectionA];
-            if (this.sectionplanePoly) {
-                this.sectionplanePoly.points = ps;
-            } else {
-                this.sectionplanePoly = this.overlay.createWorldSpacePolyline(ps);
-            }
+        this.ps = [tmp_sectionA, tmp_sectionB, tmp_sectionD, tmp_sectionC, tmp_sectionA];
+        if (this.sectionplanePoly) {
+            this.sectionplanePoly.points = this.ps;
+        } else {
+            this.sectionplanePoly = this.overlay.createWorldSpacePolyline(this.ps, this.sectionPlaneHelper);
         }
     }
 
     enableSectionPlane(params) {
         let p = this.pick({ canvasPos: params.canvasPos, select: false });
         if (p.normal && p.coordinates && p.depth) {
+            // Changed: for new section
+            p.normal = this.sectionPlaneHelper.getNormalSectionPlane(p.normal);
+            this.sectionPlaneHelper.saveLastNormalSectionPlane(p.normal);
+            const depth = (this.sectionPlaneHelper.isFreeSectionIndex())
+                ? vec3.dot(p.coordinates, p.normal)
+                : this.ps[0][this.sectionPlaneHelper.sectionIndex];
             this.sectionPlaneValues.set(p.normal.subarray(0, 3));
-            this.initialSectionPlaneD = this.sectionPlaneValues[3] = vec3.dot(p.coordinates, p.normal);
+            this.initialSectionPlaneD = this.sectionPlaneValues[3] = depth;
             this.sectionPlaneValues2.set(this.sectionPlaneValues);
             this.sectionPlaneIsDisabled = false;
             this.sectionPlaneDepth = p.depth;
@@ -727,6 +749,8 @@ export class Viewer {
         this.sectionPlaneValues2.set(this.sectionPlaneValuesDisabled);
         this.sectionPlaneIsDisabled = true;
         this.dirty = 2;
+        // Changed: for new section
+        this.sectionPlaneHelper.disableSectionPlane();
     }
 
     moveSectionPlane(params) {
@@ -738,6 +762,9 @@ export class Viewer {
         tmp_section_dir_2d[1] /= this.width / this.height;
         let d = vec2.dot(tmp_section_dir_2d, tmp_section_dir_2d.subarray(2)) * this.sectionPlaneDepth;
         this.sectionPlaneValues2[3] = this.initialSectionPlaneD + d;
+        // Changed: for new section
+        this.sectionPlaneHelper.isSectionMoving = true;
+        this.moveSectionPlaneWidget(this.sectionPlaneValues2[3]);
         this.dirty = 2;
     }
 
@@ -828,8 +855,8 @@ export class Viewer {
                 this.selectedElements.clear();
             }
         }
-
-        return { object: null, coordinates: tmp_unproject, depth: depth };
+        // Changed: for new section
+        return { object: null, coordinates: tmp_unproject, depth: depth, normal: normal };
     }
 
     getPickColor(uniqueId) { // Converts an integer to a pick color
@@ -855,6 +882,8 @@ export class Viewer {
             this.modelBounds = modelBounds;
         }
         this.camera.setModelBounds(this.modelBounds);
+        // Changed: for new section
+        this.sectionPlaneHelper.setModelBounds(this.modelBounds);
         this.updateViewport();
     }
 
