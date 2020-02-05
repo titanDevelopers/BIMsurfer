@@ -1,4 +1,5 @@
 import {AbstractBufferSet} from "./abstractbufferset.js";
+import {AvlTree} from "./collections/avltree.js";
 
 /**
  * @ignore
@@ -16,12 +17,15 @@ export class BufferSet extends AbstractBufferSet {
         this.pickColors = new Uint8Array(sizes.pickColors * 4);
         this.pickColorsIndex = 0;
         this.indices = new Uint32Array(sizes.indices), // The optimal buffer size is most definitely above the Uint16 threshold, so always use Uint32Array
+        this.lineIndices = new Uint32Array(sizes.lineIndices), // The optimal buffer size is most definitely above the Uint16 threshold, so always use Uint32Array
         this.indicesIndex = 0;
+        this.lineIndicesIndex = 0;
         this.nrIndices = 0;
+        this.nrLineIndices = 0;
         this.hasTransparency = hasTransparency;
         this.color = color;
         this.bytes = 0;
         
-        this.uniqueIdToIndex = new Map();
+        this.uniqueIdToIndex = new AvlTree(viewer.inverseUniqueIdCompareFunction);
     };
 }

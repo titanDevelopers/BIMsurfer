@@ -6,6 +6,12 @@ export class DefaultSettings {
 		if (settings == null) {
 			var settings = {};
 		}
+		if (settings.autoRender == null) {
+			settings.autoRender = true;
+		}
+		if (settings.useOverlay == null) {
+			settings.useOverlay = true;
+		}
 		if (settings.useObjectColors == null) {
 			settings.useObjectColors = false;
 		}
@@ -20,6 +26,9 @@ export class DefaultSettings {
 		}
 		if (settings.quantizeColors == null) {
 			settings.quantizeColors = true;
+		}
+		if (settings.resetToDefaultViewOnLoad == null) {
+			settings.resetToDefaultViewOnLoad = true;
 		}
 		if (settings.gpuReuse == null) {
 			settings.gpuReuse = false;
@@ -103,6 +112,9 @@ export class DefaultSettings {
 		}
 		if (settings.realtimeSettings.orderIndependentTransparency == null) {
 			settings.realtimeSettings.orderIndependentTransparency = true;
+		}
+		if (settings.realtimeSettings.drawLineRenders == null) {
+			settings.realtimeSettings.drawLineRenders = false;
 		}
 		return settings;
 	}

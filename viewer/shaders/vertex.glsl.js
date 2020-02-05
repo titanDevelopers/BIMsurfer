@@ -20,6 +20,7 @@ in float direction;
 #endif
 
 #ifndef WITH_PICKING
+#ifndef WITH_LINES
 #ifdef WITH_QUANTIZENORMALS
 #ifdef WITH_OCT_ENCODE_NORMALS
 in ivec2 vertexNormal;
@@ -30,9 +31,11 @@ in ivec3 vertexNormal;
 in vec3 vertexNormal;
 #endif
 #endif
+#endif
 
 #ifndef WITH_USEOBJECTCOLORS
 #ifndef WITH_PICKING
+#ifndef WITH_LINES
 #ifdef WITH_QUANTIZECOLORS
 in uvec4 vertexColor;
 #else
@@ -40,14 +43,17 @@ in vec4 vertexColor;
 #endif
 #endif
 #endif
+#endif
 
 #ifdef WITH_INSTANCING
 in mat4 instanceMatrices;
 uniform uint numContainedInstances;
-uniform uint containedInstances[128];
+uniform uint containedInstances[256];
 uniform uint containedMeansHidden;
 #ifndef WITH_PICKING
+#ifndef WITH_LINES
 in mat3 instanceNormalMatrices;
+#endif
 #endif
 #endif
 
@@ -79,7 +85,9 @@ uniform mat4 matrix;
 uniform float aspect;
 uniform float thickness;
 #else
+#ifndef WITH_LINES
 uniform mat3 viewNormalMatrix;
+#endif
 #endif
 
 uniform mat4 projectionMatrix;
@@ -97,13 +105,16 @@ vec3 octDecode(vec2 oct) {
 }
 
 void main(void) {
-#ifdef WITH_QUANTIZEVERTICES
-    vec4 floatVertex = vec4(postProcessingTranslation, 0) + vertexQuantizationMatrix * vec4(float(vertexPosition.x), float(vertexPosition.y), float(vertexPosition.z), 1);
-#else
-    vec4 floatVertex = vec4(postProcessingTranslation, 0) + vec4(vertexPosition, 1);
+#ifndef WITH_INSTANCING
+	#ifdef WITH_QUANTIZEVERTICES
+		vec4 floatVertex = vec4(postProcessingTranslation, 0) + vertexQuantizationMatrix * vec4(float(vertexPosition.x), float(vertexPosition.y), float(vertexPosition.z), 1);
+	#else
+	    vec4 floatVertex = vec4(postProcessingTranslation, 0) + vec4(vertexPosition, 1);
+	#endif
 #endif
 
 #ifndef WITH_PICKING
+#ifndef WITH_LINES
 #ifdef WITH_QUANTIZENORMALS
 #ifdef WITH_OCT_ENCODE_NORMALS
 	vec2 normal = vec2(float(vertexNormal.x), float(vertexNormal.y));
@@ -120,9 +131,11 @@ void main(void) {
     vec3 floatNormal = octDecode(normal);
 #else
 	vec3 floatNormal = vec3(float(vertexNormal.x) / 127.0, float(vertexNormal.y) / 127.0, float(vertexNormal.z) / 127.0);
+//	floatNormal = vec3(0.0, 0.0, 1.0);
 #endif
 #else
     vec3 floatNormal = vertexNormal;
+#endif
 #endif
 #endif
 
@@ -130,6 +143,7 @@ void main(void) {
     vec4 floatColor = objectColor;
 #else
 #ifndef WITH_PICKING
+#ifndef WITH_LINES
 #ifdef WITH_QUANTIZECOLORS
     vec4 floatColor = vec4(float(vertexColor.x) / 255.0, float(vertexColor.y) / 255.0, float(vertexColor.z) / 255.0, float(vertexColor.w) / 255.0);
 #else
@@ -137,19 +151,27 @@ void main(void) {
 #endif
 #endif
 #endif
+#endif
 
 #ifdef WITH_INSTANCING
-    floatVertex = vec4(postProcessingTranslation, 0) + instanceMatrices * floatVertex;
+	#ifdef WITH_QUANTIZEVERTICES
+		vec4 floatVertex = vec4(postProcessingTranslation, 0) + instanceMatrices * vertexQuantizationMatrix * vec4(float(vertexPosition.x), float(vertexPosition.y), float(vertexPosition.z), 1);
+	#else
+		vec4 floatVertex = vec4(postProcessingTranslation, 0) + instanceMatrices * vec4(vertexPosition, 1);
+	#endif
 #ifndef WITH_PICKING
+#ifndef WITH_LINES
     floatNormal = instanceNormalMatrices * floatNormal;
+#endif
 #endif
 #endif
 
 #ifdef WITH_LINEPRIMITIVES
     // tfk: todo: line matrix could be same as instanceMatrix?
     vec2 aspectVec = vec2(aspect, 1.0);
-    mat4 projViewModel = projectionMatrix * viewMatrix * matrix;
-    vec4 currentProjected = projViewModel * floatVertex;
+    mat4 viewModel = viewMatrix * matrix;
+    mat4 projViewModel = projectionMatrix * viewModel;
+    vec4 currentProjected = projectionMatrix * (vec4(postProcessingTranslation, 0) + viewModel * floatVertex);
     vec2 currentScreen = currentProjected.xy / currentProjected.w * aspectVec;
 
 #ifdef WITH_QUANTIZEVERTICES
@@ -198,10 +220,18 @@ void main(void) {
     color = vertexPickColor;
 #endif
 #else
+#ifdef WITH_LINES
+	// Line rendering color
+	color = vec4(0.3, 0.3, 0.3, 1);
+#else
     vec3 viewNormal = normalize(viewNormalMatrix * floatNormal);
-    float lambert1 = abs(dot(floatNormal, normalize(lightData.dir)));
+    // This does not seem to work, I think the "abs" results in the model being dark on 2 sides, and being light on the other 2 sides
+//    float lambert1 = abs(dot(floatNormal, normalize(lightData.dir)));
     float lambert2 = max(dot(-viewNormal, normalize(lightData.dir)), 0.0);
-    color = vec4((lambert1 * 0.85 + lambert2 * 0.2 + 0.3) * floatColor.rgb, floatColor.a);
+//    color = vec4((lambert1 * 0.85 + lambert2 * 0.2 + 0.3) * floatColor.rgb, floatColor.a);
+    color = vec4((lambert2 * 0.7 + 0.3) * floatColor.rgb, floatColor.a);
+//    color = floatColor;
+#endif
 #endif
 
 #endif

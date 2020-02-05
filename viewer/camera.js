@@ -5,25 +5,12 @@ import * as vec3 from "./glmatrix/vec3.js";
 import {Perspective} from "./perspective.js";
 import {Orthographic} from "./orthographic.js";
 
-var tempMat4 = mat4.create();
-var tempMat4b = mat4.create();
-var tempVec3 = vec3.create();
-var tempVec3b = vec3.create();
-var tempVec3c = vec3.create();
-var tempVec3d = vec3.create();
-var tempVec3e = vec3.create();
-
-var tmp_modelBounds = vec3.create();
-
-var YAW_MATRIX = mat4.create();
-
 /**
  A **Camera** defines viewing and projection transforms for its Viewer.
  */
 export class Camera {
 
     constructor(viewer) {
-
         this.viewer = viewer;
 
         this.perspective = new Perspective(viewer);
@@ -58,6 +45,19 @@ export class Camera {
 
         this._modelBounds = null;
 
+        this.tempMat4 = mat4.create();
+        this.tempMat4b = mat4.create();
+        this.tempVec3 = vec3.create();
+        this.tempVec3b = vec3.create();
+        this.tempVec3c = vec3.create();
+        this.tempVec3d = vec3.create();
+        this.tempVec3e = vec3.create();
+        this.tempVecBuild = vec3.create();
+
+        this.tmp_modelBounds = vec3.create();
+
+        this.yawMatrix = mat4.create();
+        
         // Until there is a proper event handler mechanism, just do it manually.
         this.listeners = [];
         this.lowVolumeListeners = [];
@@ -84,8 +84,8 @@ export class Camera {
     setModelBounds(bounds) {
         this._modelBounds = [];
 
-        this.perspective.setModelBounds(bounds);
-        this.orthographic.setModelBounds(bounds);
+        this.perspective.setModelBounds(vec3.clone(bounds));
+        this.orthographic.setModelBounds(vec3.clone(bounds));
         
         // Store aabb calculated} from points
         let a = vec3.fromValues(+Infinity, +Infinity, +Infinity);
@@ -119,54 +119,66 @@ export class Camera {
         this._dirty = true;
     }
 
-    _build() {
-        if (this._dirty && !this._locked && this._modelBounds) {
-            vec3.set(this._up, 0,0,1);
-            var d = vec3.subtract(vec3.create(), this._target, this._eye);
-            vec3.normalize(d, d);
-            vec3.cross(this._up, d, this._up);
-            vec3.cross(this._up, this._up, d);
+    forceBuild() {
+   		vec3.set(this._up, 0, 0, 1);
+        vec3.subtract(this.tempVecBuild, this._target, this._eye);
+        vec3.normalize(this.tempVecBuild, this.tempVecBuild);
+        vec3.cross(this._up, this.tempVecBuild, this._up);
+        vec3.cross(this._up, this._up, this.tempVecBuild);
+        if (vec3.equals(this._up, vec3.fromValues(0, 0, 0))) {
+        	// Not good, choose something
+        	vec3.set(this._up, 0, 1, 0);
+        }
 
-            mat4.lookAt(this._viewMatrix, this._eye, this._target, this._up);
-            mat4.identity(tempMat4);
-            mat4.multiply(this._viewMatrix, tempMat4, this._viewMatrix); // Why?
-            mat3.fromMat4(tempMat4b, this._viewMatrix);
-            mat3.invert(tempMat4b, tempMat4b);
-            mat3.transpose(this._viewNormalMatrix, tempMat4b);
-            
-            let [near, far] = [+Infinity, -Infinity];
+        mat4.lookAt(this._viewMatrix, this._eye, this._target, this._up);
+        mat4.identity(this.tempMat4);
+        mat4.multiply(this._viewMatrix, this.tempMat4, this._viewMatrix); // Why?
+        mat3.fromMat4(this.tempMat4b, this._viewMatrix);
+        mat3.invert(this.tempMat4b, this.tempMat4b);
+        mat3.transpose(this._viewNormalMatrix, this.tempMat4b);
+        
+        let [near, far] = [+Infinity, -Infinity];
 
-            if (this.autonear) {                
-                this._modelBounds.forEach((v) => {
-                    vec3.transformMat4(tmp_modelBounds, v, this._viewMatrix);
-                    let z = -tmp_modelBounds[2];
-                    if (z < near) {
-                        near = z;
-                    }
-                    if (z > far) {
-                        far = z;
-                    }
-                });
-
-                if (near < 1.e-3) {
-                    near = far / 1000.;
+        if (this.autonear) {
+        	for (var v of this._modelBounds) {
+                vec3.transformMat4(this.tmp_modelBounds, v, this._viewMatrix);
+                let z = -this.tmp_modelBounds[2];
+                if (z < near) {
+                    near = z;
                 }
-            } else {
-                [near, far] = [+100, +1000000.];
+                if (z > far) {
+                    far = z;
+                }
             }
 
-            this.perspective.near = near;
-            this.perspective.far = far;
-            this.orthographic.near = near;
-            this.orthographic.far = far;        
+            if (near < 1.e-3) {
+                near = far / 1000.;
+            }
+        } else {
+            [near, far] = [+100, +1000000.];
+        }
 
-            mat4.invert(this._viewMatrixInverted, this._viewMatrix);
-            mat4.multiply(this._viewProjMatrix, this.projMatrix, this._viewMatrix);
-            mat4.invert(this._viewProjMatrixInverted, this._viewProjMatrix);
+        this.perspective.near = near;
+        this.perspective.far = far;
+        this.orthographic.near = near;
+        this.orthographic.far = far;        
 
-            this._dirty = false;
+        mat4.invert(this._viewMatrixInverted, this._viewMatrix);
+        mat4.multiply(this._viewProjMatrix, this.projMatrix, this._viewMatrix);
+        mat4.invert(this._viewProjMatrixInverted, this._viewProjMatrix);
 
-            this.listeners.forEach((fn) => { fn(); });
+        this._dirty = false;
+        
+//        console.log("Rebuilt", this._up, this._viewMatrix);
+        
+        for (var listener of this.listeners) {
+        	listener();
+        }
+    }
+    
+    _build() {
+        if (this._dirty && !this._locked && this._modelBounds) {
+        	this.forceBuild();
         }
     }
 
@@ -275,10 +287,12 @@ export class Camera {
      @param {Float32Array} eye 3D position of the camera in World space.
      */
     set eye(eye) {
-        this._eye.set(eye || [0.0, 0.0, -10.0]);
-        this._setDirty();
-    	for (var listener of this.lowVolumeListeners) {
-    		listener();
+    	if (!vec3.equals(this._eye, eye)) {
+    		this._eye.set(eye || [0.0, 0.0, -10.0]);
+    		this._setDirty();
+    		for (var listener of this.lowVolumeListeners) {
+    			listener();
+    		}
     	}
     }
 
@@ -295,10 +309,12 @@ export class Camera {
      @param {Float32Array} target 3D position of the point of interest in World space.
      */
     set target(target) {
-        this._target.set(target || [0.0, 0.0, 0.0]);
-        this._setDirty();
-    	for (var listener of this.lowVolumeListeners) {
-    		listener();
+    	if (!vec3.equals(this._target, target)) {
+    		this._target.set(target || [0.0, 0.0, 0.0]);
+    		this._setDirty();
+    		for (var listener of this.lowVolumeListeners) {
+    			listener();
+    		}
     	}
     }
 
@@ -311,9 +327,11 @@ export class Camera {
     }
 
     set center(v) {
-        this._center.set(v);
-        vec3.negate(this._negatedCenter, this._center);
-        this.listeners.forEach((fn) => { fn(); });
+    	if (!vec3.equals(this._center, v)) {
+    		this._center.set(v);
+    		vec3.negate(this._negatedCenter, this._center);
+    		this.listeners.forEach((fn) => { fn(); });
+    	}
     }
 
     get center() {
@@ -464,13 +482,13 @@ export class Camera {
     orbitYaw(degrees) {
         // @todo, these functions are not efficient nor numerically stable, but simple to understand.
         
-    	mat4.identity(YAW_MATRIX);
-    	mat4.translate(YAW_MATRIX, YAW_MATRIX, this._center);
-    	mat4.rotate(YAW_MATRIX, YAW_MATRIX, degrees * 0.0174532925 * 2, this._worldUp);
-    	mat4.translate(YAW_MATRIX, YAW_MATRIX, this._negatedCenter);
+    	mat4.identity(this.yawMatrix);
+    	mat4.translate(this.yawMatrix, this.yawMatrix, this._center);
+    	mat4.rotate(this.yawMatrix, this.yawMatrix, degrees * 0.0174532925 * 2, this._worldUp);
+    	mat4.translate(this.yawMatrix, this.yawMatrix, this._negatedCenter);
     	
-        vec3.transformMat4(this._eye, this._eye, YAW_MATRIX);
-        vec3.transformMat4(this._target, this._target, YAW_MATRIX);
+        vec3.transformMat4(this._eye, this._eye, this.yawMatrix);
+        vec3.transformMat4(this._target, this._target, this.yawMatrix);
 
         this._setDirty();
         return;
@@ -517,12 +535,12 @@ export class Camera {
      @param {Number} degrees Angle of rotation in degrees
      */
     yaw(degrees) { // Rotate (yaw) 'target' and 'up' about 'eye', pivoting around 'up'
-        var eyeToTarget = vec3.subtract(tempVec3, this._target, this._eye);
-        mat4.fromRotation(tempMat4, degrees * 0.0174532925, this._gimbalLock ? this._worldUp : this._up);
-        vec3.transformMat4(eyeToTarget, eyeToTarget, tempMat4); // Rotate vector
+        var eyeToTarget = vec3.subtract(this.tempVec3, this._target, this._eye);
+        mat4.fromRotation(this.tempMat4, degrees * 0.0174532925, this._gimbalLock ? this._worldUp : this._up);
+        vec3.transformMat4(eyeToTarget, eyeToTarget, this.tempMat4); // Rotate vector
         vec3.add(this._target, this._eye, eyeToTarget); // Derive 'target'} from eye and vector
         if (this._gimbalLock) {
-            vec3.transformMat4(this._up, this._up, tempMat4); // Rotate 'up' vector
+            vec3.transformMat4(this._up, this._up, this.tempMat4); // Rotate 'up' vector
         }
         this._setDirty();
     }
@@ -533,13 +551,13 @@ export class Camera {
      @param {Number} degrees Angle of rotation in degrees
      */
     pitch(degrees) { // Rotate (pitch) 'eye' and 'up' about 'target', pivoting around horizontal vector ortho to (target->eye) and camera 'up'
-        var eyeToTarget = vec3.subtract(tempVec3, this._target, this._eye);
-        var a = vec3.normalize(tempVec3c, eyeToTarget);
-        var b = vec3.normalize(tempVec3d, this._up);
-        var axis = vec3.cross(tempVec3b, a, b); // Pivot vector is orthogonal to target->eye
-        mat4.fromRotation(tempMat4, degrees * 0.0174532925, axis);
-        vec3.transformMat4(eyeToTarget, eyeToTarget, tempMat4); // Rotate vector
-        var newUp = vec3.transformMat4(tempVec3d, this._up, tempMat4); // Rotate 'up' vector
+        var eyeToTarget = vec3.subtract(this.tempVec3, this._target, this._eye);
+        var a = vec3.normalize(this.tempVec3c, eyeToTarget);
+        var b = vec3.normalize(this.tempVec3d, this._up);
+        var axis = vec3.cross(this.tempVec3b, a, b); // Pivot vector is orthogonal to target->eye
+        mat4.fromRotation(this.tempMat4, degrees * 0.0174532925, axis);
+        vec3.transformMat4(eyeToTarget, eyeToTarget, this.tempMat4); // Rotate vector
+        var newUp = vec3.transformMat4(this.tempVec3d, this._up, this.tempMat4); // Rotate 'up' vector
         if (this._constrainPitch) {
             var angle = vec3.dot(newUp, this._worldUp) / 0.0174532925; // Don't allow 'up' to go up[side-down with respect to World 'up'
             if (angle < 1) {
@@ -557,25 +575,25 @@ export class Camera {
      @param {Array} pan The pan vector
      */
     pan(pan) { // Translate 'eye' and 'target' along local camera axis
-        var eyeToTarget = vec3.subtract(tempVec3, this._eye, this._target);
+        var eyeToTarget = vec3.subtract(this.tempVec3, this._eye, this._target);
         var vec = [0, 0, 0];
         if (pan[0] !== 0) {
-            let a = vec3.normalize(tempVec3b, eyeToTarget); // Get  vector orthogonal to 'up' and eye->target
-            let b = vec3.normalize(tempVec3c, this._up);
-            let v = vec3.cross(tempVec3d, a, b);
+            let a = vec3.normalize(this.tempVec3b, eyeToTarget); // Get  vector orthogonal to 'up' and eye->target
+            let b = vec3.normalize(this.tempVec3c, this._up);
+            let v = vec3.cross(this.tempVec3d, a, b);
             vec3.scale(v, v, pan[0]);
             vec[0] += v[0];
             vec[1] += v[1];
             vec[2] += v[2];
         }
         if (pan[1] !== 0) {
-            let v = vec3.scale(tempVec3, vec3.normalize(tempVec3b, this._up), pan[1]);
+            let v = vec3.scale(this.tempVec3, vec3.normalize(this.tempVec3b, this._up), pan[1]);
             vec[0] += v[0];
             vec[1] += v[1];
             vec[2] += v[2];
         }
         if (pan[2] !== 0) {
-            let v = vec3.scale(tempVec3, vec3.normalize(tempVec3b, eyeToTarget), pan[2]);
+            let v = vec3.scale(this.tempVec3, vec3.normalize(this.tempVec3b, eyeToTarget), pan[2]);
             vec[0] += v[0];
             vec[1] += v[1];
             vec[2] += v[2];
@@ -597,15 +615,15 @@ export class Camera {
     	this.orthographic.zoom(delta);
     	
         let [x,y] = canvasPos;
-        vec3.set(tempVec3, x / this.viewer.width * 2 - 1, - y / this.viewer.height * 2 + 1, 1.);
-        vec3.transformMat4(tempVec3, tempVec3, this.projection.projMatrixInverted);
-        vec3.transformMat4(tempVec3, tempVec3, this.viewMatrixInverted);
-        vec3.subtract(tempVec3, tempVec3, this._eye);
-        vec3.normalize(tempVec3, tempVec3);
-        vec3.scale(tempVec3, tempVec3, -delta);
+        vec3.set(this.tempVec3, x / this.viewer.width * 2 - 1, - y / this.viewer.height * 2 + 1, 1.);
+        vec3.transformMat4(this.tempVec3, this.tempVec3, this.projection.projMatrixInverted);
+        vec3.transformMat4(this.tempVec3, this.tempVec3, this.viewMatrixInverted);
+        vec3.subtract(this.tempVec3, this.tempVec3, this._eye);
+        vec3.normalize(this.tempVec3, this.tempVec3);
+        vec3.scale(this.tempVec3, this.tempVec3, -delta);
 
-        vec3.add(this._eye, this._eye, tempVec3);
-        vec3.add(this._target, this._target, tempVec3);
+        vec3.add(this._eye, this._eye, this.tempVec3);
+        vec3.add(this._target, this._target, this.tempVec3);
 
         this._setDirty();
 
@@ -627,7 +645,7 @@ export class Camera {
     viewFit(aabb, fitFOV) {
         aabb = aabb || this.viewer.modelBounds;
         fitFOV = fitFOV || this.perspective.fov;
-        var eyeToTarget = vec3.normalize(tempVec3b, vec3.subtract(tempVec3, this._eye, this._target));
+        var eyeToTarget = vec3.normalize(this.tempVec3b, vec3.subtract(this.tempVec3, this._eye, this._target));
         var diagonal = Math.sqrt(
             Math.pow(aabb[3] - aabb[0], 2) +
             Math.pow(aabb[4] - aabb[1], 2) +

@@ -6,7 +6,6 @@ import {Utils} from "./utils.js";
 import {GeometryCache} from "./geometrycache.js";
 import {FrozenBufferSet} from "./frozenbufferset.js";
 
-const selectionOutlineMatrix = mat4.create();
 const outlineColor = new Float32Array([1.0, 0.5, 0.0, 1.0]);
 const false_true = [false, true];
 const UINT32_MAX = (new Uint32Array((new Int32Array([-1])).buffer))[0];
@@ -31,18 +30,26 @@ export class RenderLayer {
 		WEBGL_multi_draw = this.gl.getExtension("WEBGL_multi_draw");
 		this.geometryDataToReuse = geometryDataToReuse;
 		this.geometryCache = new GeometryCache(this);
-		this.instanceSelectionData = new Uint32Array(128);
+		this.instanceSelectionData = new Uint32Array(1024);
 		this.previousInstanceVisibilityState = null;
 
+		this.selectionOutlineMatrix = mat4.create();
+		
 		this.lines = null;
 		this.loaders = new Map();
 		this.bufferTransformer = new BufferTransformer(this.settings, viewer.vertexQuantization);
-		this.nrPrimitivesLoaded = 0;
 		
-		this.postProcessingTranslation = vec3.create();
+		this.nrPrimitivesLoaded = 0;
+		this.nrTrianglesLoaded = 0;
+		this.nrLinesLoaded = 0;
+		
+		this.postProcessingTranslation = vec3.fromValues(0, 0, 0);
 	}
 
 	createGeometry(loaderId, roid, croid, geometryId, positions, normals, colors, color, indices, lineIndices, hasTransparency, reused) {
+		if (lineIndices == null) {
+			debugger;
+		}
 		var bytesUsed = Utils.calculateBytesUsed(this.settings, positions.length, colors.length, indices.length, lineIndices ? lineIndices.length : 0, normals.length);
 		var geometry = {
 				id: geometryId,
@@ -147,22 +154,18 @@ export class RenderLayer {
 				if (this.settings.quantizeVertices) {
 					vec3.transformMat4(vertex, vertex, this.viewer.vertexQuantization.vertexQuantizationMatrixWithGlobalTranslation);
 				}
-	
+				
 				buffer.positions.set(vertex, buffer.positionsIndex);
 				buffer.positionsIndex += 3;
 			}
 			var floatNormal = vec3.create();
 			var intNormal = new Int8Array(3);
 			for (var i = 0; i < geometry.normals.length; i += 3) {
-
 				if (loaderQuantizeNormals) {
-
 					floatNormal[0] = geometry.normals[i] / 127;
 					floatNormal[1] = geometry.normals[i + 1] / 127;
 					floatNormal[2] = geometry.normals[i + 2] / 127;
-
 				} else {
-
 					floatNormal[0] = geometry.normals[i];
 					floatNormal[1] = geometry.normals[i + 1];
 					floatNormal[2] = geometry.normals[i + 2];
@@ -174,13 +177,11 @@ export class RenderLayer {
 				// Also the number becomes really small, resulting in all zeros when quantizing again, that can't be right				
 
 				if (quantizeNormals) {
-
 					intNormal[0] = floatNormal[0] * 127;
 					intNormal[1] = floatNormal[1] * 127;
 					intNormal[2] = floatNormal[2] * 127;
 
 					buffer.normals.set(intNormal, buffer.normalsIndex);
-
 				} else {
 					buffer.normals.set(floatNormal, buffer.normalsIndex);
 				}
@@ -227,15 +228,17 @@ export class RenderLayer {
 				buffer.pickColorsIndex += 4;
 			}
 
-			var li = (buffer.uniqueIdToIndex.get(object.id) || []);
+			var li = (buffer.uniqueIdToIndex.get(object.uniqueId) || []);
 			var idx = {
 				start: buffer.indicesIndex, 
 				length: geometry.indices.length,
+				lineIndexStart: buffer.lineIndicesIndex,
+				lineIndexLength: geometry.lineIndices.length,
 				color: originalColorIndex,
 				colorLength: geometry.colors.length
 			};
 			li.push(idx);
-			buffer.uniqueIdToIndex.set(object.id, li);
+			buffer.uniqueIdToIndex.set(object.uniqueId, li);
 			
 			var index = Array(3);
 			for (var i=0; i<geometry.indices.length; i+=3) {
@@ -254,6 +257,26 @@ export class RenderLayer {
 				
 				buffer.indices.set(index, buffer.indicesIndex);
 				buffer.indicesIndex += 3;
+			}
+			for (var i=0; i<geometry.lineIndices.length; i+=3) {
+				index[0] = geometry.lineIndices[i + 0] + startIndex;
+				index[1] = geometry.lineIndices[i + 1] + startIndex;
+				index[2] = geometry.lineIndices[i + 2] + startIndex;
+				
+				for (var j=0; j<3; j++) {
+					if (idx.minLineIndex == null || index[j] < idx.minLineIndex) {
+						idx.minLineIndex = index[j];
+					}
+					if (idx.maxLineIndex == null || index[j] > idx.maxLineIndex) {
+						idx.maxLineIndex = index[j];
+					}
+				}
+				try {
+					buffer.lineIndices.set(index, buffer.lineIndicesIndex);
+					buffer.lineIndicesIndex += 3;
+				} catch (e) {
+					debugger;
+				}
 			}
 		} catch (e) {
 			debugger;
@@ -306,18 +329,22 @@ export class RenderLayer {
 	}
 	
 	addGeometryReusable(geometry, loader, gpuBufferManager) {
+		if (geometry.lineIndices == null) {
+			debugger;
+		}
 		var programInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(true, false));
+		var lineProgramInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(true, false, true));
         var pickProgramInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(true, true));
 
 		const numInstances = geometry.objects.length;
 
 		const positionBuffer = Utils.createBuffer(this.gl, this.bufferTransformer.convertVertices(geometry.croid, geometry.positions));
-		const normalBuffer = Utils.createBuffer(this.gl, this.bufferTransformer.convertNormals(geometry.normals), null, this.gl.ARRAY_BUFFER, 2);
+		const normalBuffer = Utils.createBuffer(this.gl, this.bufferTransformer.convertNormals(geometry.normals), null, this.gl.ARRAY_BUFFER, this.settings.loaderSettings.octEncodeNormals ? 2 : 3);
 		const colorBuffer = geometry.colors != null
 			? Utils.createBuffer(this.gl, geometry.colors, null, this.gl.ARRAY_BUFFER, 4)
 			: null;
 		const indexBuffer = Utils.createIndexBuffer(this.gl, this.bufferTransformer.convertIndices(geometry.indices, geometry.positions.length));
-		const lineIndexBuffer = geometry.lineIndices ? Utils.createIndexBuffer(this.gl, geometry.lineIndices) : null;
+		const lineIndexBuffer = geometry.lineIndices ? Utils.createLineIndexBuffer(this.gl, this.bufferTransformer.convertIndices(geometry.lineIndices, geometry.positions.length)) : null;
 		
 		let color, colorHash;
 
@@ -348,6 +375,7 @@ export class RenderLayer {
 			
 			null,
 			null,
+			null,
 
 			geometry.hasTransparency,
 			true,
@@ -360,9 +388,10 @@ export class RenderLayer {
 
 		buffer.numInstances = numInstances;
 		buffer.nrTrianglesToDraw = (buffer.nrIndices / 3) * geometry.matrices.length;
+		buffer.nrLinesToDraw = (buffer.nrLineIndices / 2) * geometry.matrices.length;
 		
 		buffer.setObjects(this.gl, geometry.objects);
-		buffer.buildVao(this.gl, this.settings, programInfo, pickProgramInfo);
+		buffer.buildVao(this.gl, this.settings, programInfo, pickProgramInfo, lineProgramInfo);
 
 		geometry.objects.forEach((obj) => {
 			this.viewer.uniqueIdToBufferSet.set(obj.uniqueId, [buffer]);
@@ -371,10 +400,12 @@ export class RenderLayer {
 		loader.geometries.delete(geometry.id);
 		gpuBufferManager.pushBuffer(buffer);
 
-		this.nrPrimitivesLoaded += buffer.nrTrianglesToDraw;
-		this.viewer.stats.inc("Primitives", "Nr primitives loaded", buffer.nrTrianglesToDraw);
+		this.nrTrianglesLoaded += buffer.nrTrianglesToDraw;
+		this.nrLinesLoaded += buffer.nrLinesToDraw;
+		this.nrPrimitivesLoaded += buffer.nrTrianglesToDraw + buffer.nrLinesToDraw;
+		this.viewer.stats.inc("Primitives", "Nr primitives loaded", buffer.nrTrianglesToDraw + buffer.nrLinesToDraw);
 		if (this.progressListener != null) {
-			this.progressListener(this.nrPrimitivesLoaded);
+			this.progressListener(this.nrTrianglesLoaded, this.nrLinesLoaded);
 		}
 
 		var toadd = 
@@ -420,18 +451,18 @@ export class RenderLayer {
 		this.lastCroidRendered = null;
 	}
 	
-	render(transparency, visibleElements) {
-		this.renderBuffers(transparency, false, visibleElements);
+	render(transparency, lineRender, visibleElements) {
+		this.renderBuffers(transparency, false, lineRender, visibleElements);
 		if (this.settings.gpuReuse) {
-			this.renderBuffers(transparency, true, visibleElements);
+			this.renderBuffers(transparency, true, lineRender, visibleElements);
 		}
 	}
 	
-	renderFinalBuffers(buffers, programInfo, visibleElements) {
+	renderFinalBuffers(buffers, programInfo, visibleElements, lines) {
 		if (buffers != null && buffers.length > 0) {
 			let picking = visibleElements.pass === 'pick';
 			var lastUsedColorHash = null;
-			
+
 			for (let buffer of buffers) {
 				if (!picking && this.settings.useObjectColors) {
 					if (lastUsedColorHash == null || lastUsedColorHash != buffer.colorHash) {
@@ -439,29 +470,29 @@ export class RenderLayer {
 						lastUsedColorHash = buffer.colorHash;
 					}
 				}
-				
+
 				if (buffer.unquantizationMatrix != null && programInfo.lastUnquantizationMatrixUsed != buffer.unquantizationMatrix) {
 					this.gl.uniformMatrix4fv(programInfo.uniformLocations.vertexQuantizationMatrix, false, buffer.unquantizationMatrix);
 					programInfo.lastUnquantizationMatrixUsed = buffer.unquantizationMatrix;
 				}
-				
-				this.renderBuffer(buffer, programInfo, visibleElements);
+
+				this.renderBuffer(buffer, programInfo, visibleElements, lines);
 			}
 		}
 	}
 	
-	renderBuffer(buffer, programInfo, visibleElements) {
+	renderBuffer(buffer, programInfo, visibleElements, lines) {
 		const gl = this.gl;
 		
 		// console.log(programInfo.uniformLocations);
 
 		let picking = visibleElements.pass === 'pick';
-		gl.bindVertexArray(picking ? buffer.vaoPick : buffer.vao);
+		gl.bindVertexArray(picking ? buffer.vaoPick : (lines ? buffer.lineRenderVao : buffer.vao));
 		if (buffer.reuse) {
 			if (this.viewer.settings.quantizeVertices) {
 				if (buffer.croid) {
-					if (this.lastCroidRendered === buffer.croid) {
-						// Skip it
+					if (this.lastCroidRendered === buffer.croid && false) {
+						// Skip it, this needs clarification, disabling for now because that seems to fix picking for instanced rendering
 					} else {
 						let uqm = this.viewer.vertexQuantization.getUntransformedInverseVertexQuantizationMatrixForCroid(buffer.croid);
 						gl.uniformMatrix4fv(programInfo.uniformLocations.vertexQuantizationMatrix, false, uqm);
@@ -483,17 +514,26 @@ export class RenderLayer {
 						(subset.hidden != null ? (subset.hidden + ",") : "") + 
 						subset.instanceIds.join(",");
 
-					if (instanceVisibilityState !== this.previousInstanceVisibilityState) {
+					// Disabled caching for now because it's does seem to hide all line renders
+//					if (instanceVisibilityState !== this.previousInstanceVisibilityState) {
 						this.instanceSelectionData.fill(UINT32_MAX);
 						this.instanceSelectionData.set(subset.instanceIds);
 
+						// TODO Maybe we can store this in a buffer instead of send it as a uniform?
+						
 						// console.log("selection", visibleElements.pass, subset.hidden ? "hide" : "show", ...this.instanceSelectionData.subarray(0, subset.instanceIds.length));
 						gl.uniform1uiv(programInfo.uniformLocations.containedInstances, this.instanceSelectionData);
 						gl.uniform1ui(programInfo.uniformLocations.numContainedInstances, subset.instanceIds.length);
 						gl.uniform1ui(programInfo.uniformLocations.containedMeansHidden, subset.hidden ? 1 : 0);
+						
+						// Ruben: Is this really ok? Do we need to clear it? Can this really be stored in the renderlayer?
 						this.previousInstanceVisibilityState = instanceVisibilityState;
+//					}
+					if (lines) {
+						gl.drawElementsInstanced(this.gl.LINES, buffer.lineIndexBuffer.N, buffer.indexType, 0, buffer.nrProcessedMatrices);
+					} else {
+						gl.drawElementsInstanced(this.gl.TRIANGLES, buffer.indexBuffer.N, buffer.indexType, 0, buffer.nrProcessedMatrices);
 					}
-					gl.drawElementsInstanced(this.gl.TRIANGLES, buffer.indexBuffer.N, buffer.indexType, 0, buffer.nrProcessedMatrices);
 				}
 			}
 		} else {
@@ -507,26 +547,34 @@ export class RenderLayer {
 					include = false;
 				}
 				if (include) {
-					this.gl.drawElements(this.gl.TRIANGLES, buffer.nrTrianglesToDraw * 3, this.gl.UNSIGNED_INT, 0);
+					if (lines) {
+						this.gl.drawElements(this.gl.LINES, buffer.nrLinesToDraw * 2, this.gl.UNSIGNED_INT, 0);
+					} else {
+						this.gl.drawElements(this.gl.TRIANGLES, buffer.nrTrianglesToDraw * 3, this.gl.UNSIGNED_INT, 0);
+					}
 				}
 			} else {
 				const visibleRanges = buffer.computeVisibleRangesAsBuffers(visibleElements, this.gl);
 				if (visibleRanges && visibleRanges.pos > 0) {
 					// TODO add buffer.nrTrianglesToDraw code
-					if (visibleRanges.offsetsBytes == null) {
-						visibleRanges.offsetsBytes = new Int32Array(visibleRanges.pos);
-						for (var i=0; i<visibleRanges.pos; i++) {
-							visibleRanges.offsetsBytes[i] = visibleRanges.offsets[i] * 4;
-						}
-					}
 					
 					if (WEBGL_multi_draw) {
 						// This is available on Chrome Canary 75
-						WEBGL_multi_draw.multiDrawElementsWEBGL(this.gl.TRIANGLES, visibleRanges.counts, 0, this.gl.UNSIGNED_INT, visibleRanges.offsetsBytes, 0, visibleRanges.pos);
+						if (lines) {
+							WEBGL_multi_draw.multiDrawElementsWEBGL(this.gl.LINES, visibleRanges.lineRenderCounts, 0, this.gl.UNSIGNED_INT, visibleRanges.lineRenderOffsetsBytes, 0, visibleRanges.pos);
+						} else {
+							WEBGL_multi_draw.multiDrawElementsWEBGL(this.gl.TRIANGLES, visibleRanges.counts, 0, this.gl.UNSIGNED_INT, visibleRanges.offsetsBytes, 0, visibleRanges.pos);
+						}
 					} else {
 						// A manual loop using the same range data
-						for (let i = 0; i < visibleRanges.pos; ++i) {
-							this.gl.drawElements(this.gl.TRIANGLES, visibleRanges.counts[i], this.gl.UNSIGNED_INT, visibleRanges.offsetsBytes[i]);
+						if (lines) {
+							for (let i = 0; i < visibleRanges.pos; ++i) {
+								this.gl.drawElements(this.gl.LINES, visibleRanges.lineRenderCounts[i], this.gl.UNSIGNED_INT, visibleRanges.lineRenderOffsetsBytes[i]);
+							}
+						} else {
+							for (let i = 0; i < visibleRanges.pos; ++i) {
+								this.gl.drawElements(this.gl.TRIANGLES, visibleRanges.counts[i], this.gl.UNSIGNED_INT, visibleRanges.offsetsBytes[i]);
+							}
 						}
 					}
 				}
@@ -551,6 +599,7 @@ export class RenderLayer {
 		
 		var programInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(false, false));
         var pickProgramInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(false, true));
+		var lineProgramInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(false, false, true));
 
 		if (!this.settings.fakeLoading) {
 			newBuffer = new FrozenBufferSet(
@@ -575,6 +624,7 @@ export class RenderLayer {
 				
 				null,
 				null,
+				null,
 
 				buffer.hasTransparency,
 				false,
@@ -583,12 +633,13 @@ export class RenderLayer {
 			);
 			
 			newBuffer.nrTrianglesToDraw = buffer.nrIndices / 3;
+			newBuffer.nrLinesToDraw = buffer.nrLineIndices / 2;
 			
 			newBuffer.unquantizationMatrix = buffer.unquantizationMatrix;
 
 			newBuffer.uniqueIdToIndex = buffer.uniqueIdToIndex;
 			
-			newBuffer.buildVao(this.gl, this.settings, programInfo, pickProgramInfo);
+			newBuffer.buildVao(this.gl, this.settings, programInfo, pickProgramInfo, lineProgramInfo);
 					
 			gpuBufferManager.pushBuffer(newBuffer);
 		}
@@ -602,11 +653,14 @@ export class RenderLayer {
 		return newBuffer;
 	}
 	
-	incLoadedTriangles(triangles) {
-		this.nrPrimitivesLoaded += triangles;
-		this.viewer.stats.inc("Primitives", "Nr primitives loaded", triangles);
+	incLoadedPrimitives(triangles, lines) {
+		this.nrTrianglesLoaded += triangles;
+		this.nrLinesLoaded += lines;
+		this.nrPrimitivesLoaded += triangles + lines;
+
+		this.viewer.stats.inc("Primitives", "Nr primitives loaded", triangles + lines);
 		if (this.progressListener != null) {
-			this.progressListener(this.nrPrimitivesLoaded);
+			this.progressListener(this.nrTrianglesLoaded, this.nrLinesLoaded);
 		}
 	}
 	
@@ -621,10 +675,11 @@ export class RenderLayer {
 		
 		var programInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(false, false));
 		var pickProgramInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(false, true));
+		var lineProgramInfo = this.viewer.programManager.getProgram(this.viewer.programManager.createKey(false, false, true));
 
 		if (!this.settings.fakeLoading) {
 			const positionBuffer = Utils.createBuffer(this.gl, buffer.positions, buffer.positionsIndex);
-			const normalBuffer = Utils.createBuffer(this.gl, buffer.normals, buffer.normalsIndex, this.gl.ARRAY_BUFFER, 2);
+			const normalBuffer = Utils.createBuffer(this.gl, buffer.normals, buffer.normalsIndex, this.gl.ARRAY_BUFFER, this.settings.loaderSettings.octEncodeNormals ? 2 : 3);
 			var colorBuffer = buffer.colors
 				? Utils.createBuffer(this.gl, buffer.colors, buffer.colorsIndex, this.gl.ARRAY_BUFFER, 4)
 				: null;
@@ -633,7 +688,10 @@ export class RenderLayer {
 				? Utils.createBuffer(this.gl, buffer.pickColors, buffer.pickColorsIndex, this.gl.ARRAY_BUFFER, 4)
 				: null;
 			const indexBuffer = Utils.createIndexBuffer(this.gl, buffer.indices, buffer.indicesIndex);
-			const lineIndexBuffer = buffer.lineIndices ? Utils.createIndexBuffer(this.gl, buffer.indices, buffer.indicesIndex) : null;
+			if (buffer.lineIndices == null) {
+				debugger;
+			}
+			const lineIndexBuffer = buffer.lineIndices ? Utils.createLineIndexBuffer(this.gl, buffer.indices, buffer.indicesIndex) : null;
 
 			let color, colorHash;
 
@@ -664,6 +722,7 @@ export class RenderLayer {
 				
 				null,
 				null,
+				null,
 
 				buffer.hasTransparency,
 				false,
@@ -672,8 +731,9 @@ export class RenderLayer {
 			);
 			
 			newBuffer.nrTrianglesToDraw = buffer.nrIndices / 3;
+			newBuffer.nrLinesToDraw = buffer.nrLineIndices / 3;
 			
-			newBuffer.buildVao(this.gl, this.settings, programInfo, pickProgramInfo);
+			newBuffer.buildVao(this.gl, this.settings, programInfo, pickProgramInfo, lineProgramInfo);
 
 			if (buffer.uniqueIdToIndex) {
 				for (var key of buffer.uniqueIdToIndex.keys()) {
@@ -688,10 +748,12 @@ export class RenderLayer {
 		}
 		
 		if (!buffer.isCopy) {
-			this.nrPrimitivesLoaded += buffer.nrIndices / 3;
-			this.viewer.stats.inc("Primitives", "Nr primitives loaded", buffer.nrIndices / 3);
+			this.nrTrianglesLoaded += buffer.nrIndices / 3;
+			this.nrLinesLoaded += buffer.lineIndices / 3;
+			this.nrPrimitivesLoaded += buffer.nrIndices / 3 + buffer.lineIndices / 3;
+			this.viewer.stats.inc("Primitives", "Nr primitives loaded", buffer.nrIndices / 3 + buffer.lineIndices / 3);
 			if (this.progressListener != null) {
-				this.progressListener(this.nrPrimitivesLoaded);
+				this.progressListener(this.nrTrianglesLoaded, this.nrLinesLoaded);
 			}
 			this.viewer.stats.inc("Data", "GPU bytes", buffer.bytes);
 			this.viewer.stats.inc("Data", "GPU bytes total", buffer.bytes);
@@ -706,7 +768,7 @@ export class RenderLayer {
 			let bufferManager = this.gpuBufferManager;
 			let viewer = bufferManager.viewer;
 			this.lines.renderStart(viewer, this);
-			this.lines.render(this.lineColour || outlineColor, selectionOutlineMatrix, this.lineWidth || 0.005);
+			this.lines.render(this.lineColour || outlineColor, this.selectionOutlineMatrix, this.lineWidth || 0.01);
 			this.lines.renderStop();
 		}
 	}
@@ -730,13 +792,13 @@ export class RenderLayer {
 				for (let buffer of buffers) {
 					for (var id of ids) {
 						if (buffer.lineIndexBuffers) {
-							let lines = buffer.lineIndexBuffers.get(id);
+							let lines = buffer.getLines(id, this.gl);
 							if (lines) {
 								if (!lastLineRenderer) {
 									// Kind of a dirty hack to only do the initialization once, we know the init result is the same for all buffers in this set, this improves the render speed when a lot of objects are selected
 									lines.renderStart(viewer, this);
 								}
-								lines.render(outlineColor, lines.matrixMap.get(id) || selectionOutlineMatrix, width || 0.005);
+								lines.render(outlineColor, lines.matrixMap.get(id) || this.selectionOutlineMatrix, width || 0.005);
 								lastLineRenderer = lines;
 							}
 						}
