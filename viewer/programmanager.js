@@ -9,6 +9,7 @@ export const REUSE = 16;
 export const PICKING = 32;
 export const LINE_PRIMITIVES = 64;
 export const NORMAL_OCT_ENCODE = 128;
+export const LINES = 256;
 
 /**
  * Keeps track of shader programs, glsl, uniform positions and vertex attributes
@@ -42,7 +43,7 @@ export class ProgramManager {
 			settings.uniforms.push("numContainedInstances");
 			settings.uniforms.push("containedInstances");
 			settings.uniforms.push("containedMeansHidden");
-			if (!(key & PICKING)) {
+			if (!(key & PICKING) && !(key & LINES)) {
 				settings.attributes.push("instanceNormalMatrices");
 			}
 		}
@@ -50,7 +51,9 @@ export class ProgramManager {
 			if (key & OBJECT_COLORS) {
 				settings.uniforms.push("objectColor");
 			} else {
-				settings.attributes.push("vertexColor");
+				if (!(key & LINES)) {
+					settings.attributes.push("vertexColor");
+				}
 			}			
 		}
 		if (key & NORMAL_QUANTIZATION || key & NORMAL_OCT_ENCODE) {
@@ -79,6 +82,19 @@ export class ProgramManager {
 				"LightData"
 			]
 		};
+		var defaultSetupForLines = {
+			attributes: [
+				"vertexPosition"
+				],
+				uniforms: [
+					"projectionMatrix",
+					"postProcessingTranslation",
+					"viewMatrix",
+					"sectionPlane"
+				],
+				uniformBlocks: [
+				]
+		};
 		var defaultSetupForPicking = {
 			attributes: [
 				"vertexPosition"
@@ -96,8 +112,10 @@ export class ProgramManager {
 		{
 			let picking = false;
 			for (var instancing of [true, false]) {
-				var key = this.createKey(instancing, picking);
-				this.generateShaders(defaultSetup, key);
+				for (var lines of [true, false]) {
+					var key = this.createKey(instancing, picking, lines);
+					this.generateShaders(lines ? defaultSetupForLines : defaultSetup, key);
+				}
 			}
 		}
 
@@ -149,7 +167,7 @@ export class ProgramManager {
 		return "shaders/vertex.glsl";
 	}
 
-	createKey(reuse, picking) {
+	createKey(reuse, picking, lines=false) {
 		var key = 0;
 		key |= (this.settings.useObjectColors ? OBJECT_COLORS : 0);
 		key |= (this.settings.quantizeVertices ? VERTEX_QUANTIZATION : 0);
@@ -158,6 +176,7 @@ export class ProgramManager {
 		key |= ((!picking && this.settings.quantizeColors) ? COLOR_QUANTIZATION : 0);
 		key |= (reuse ? REUSE : 0);
 		key |= (picking ? PICKING : 0);
+		key |= (lines ? LINES : 0);
 		return key;
 	}
 	
@@ -171,7 +190,8 @@ export class ProgramManager {
 			quantizeColors: (key & COLOR_QUANTIZATION) ? true : false,
 			reuse: (key & REUSE) ? true : false,
 			picking: (key & PICKING) ? true : false,
-			linePrimitives: (key & LINE_PRIMITIVES) ? true : false
+			linePrimitives: (key & LINE_PRIMITIVES) ? true : false,
+			lines: (key & LINES) ? true : false
 		};
 	}
 	
@@ -203,7 +223,7 @@ export class ProgramManager {
 	setupProgram(vertexShaderSource, fragmentShaderSource, defaultSetup, specificSetup, key) {
 //		console.log("setupProgram", key, this.keyToJson(key));
 		var p = new Promise((resolve, reject) => {
-			var shaderProgram = this.initShaderProgram(this.gl, "vertex shader", vertexShaderSource, "fragment shader", fragmentShaderSource, key);
+			var shaderProgram = this.initShaderProgram(this.gl, "vertex shader", vertexShaderSource, "fragment shader", fragmentShaderSource, key, defaultSetup, specificSetup);
 
 			var programInfo = {
 				program: shaderProgram,
@@ -261,9 +281,17 @@ export class ProgramManager {
 		return p;
 	}
 
-	initShaderProgram(gl, vsName, vsSource, fsName, fsSource, key) {
+	initShaderProgram(gl, vsName, vsSource, fsName, fsSource, key, defaultSetup, specificSetup) {
 		const vertexShader = this.loadShader(gl, gl.VERTEX_SHADER, vsName, vsSource, key);
+		if (vertexShader == null) {
+			console.error(defaultSetup, specificSetup);
+			return;
+		}
 		const fragmentShader = this.loadShader(gl, gl.FRAGMENT_SHADER, fsName, fsSource, key);
+		if (fragmentShader == null) {
+			console.error(defaultSetup, specificSetup);
+			return;
+		}
 
 		const shaderProgram = gl.createProgram();
 		gl.attachShader(shaderProgram, vertexShader);
@@ -305,6 +333,9 @@ export class ProgramManager {
 		if (key & LINE_PRIMITIVES) {
 			fullSource += `#define WITH_LINEPRIMITIVES\n`;
 		}
+		if (key & LINES) {
+			fullSource += `#define WITH_LINES\n`;
+		}
 		
 		fullSource += "\n" + source;
 		const shader = gl.createShader(type);
@@ -312,7 +343,7 @@ export class ProgramManager {
 		gl.compileShader(shader);
 		if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
 			console.error(name);
-			console.error(fullSource);
+//			console.error(fullSource);
 			console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
 			gl.deleteShader(shader);
 			return null;
