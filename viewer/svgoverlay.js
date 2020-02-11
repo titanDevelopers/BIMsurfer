@@ -15,7 +15,7 @@ class SvgOverlayNode {
         }
         if (this._lastVisibilityState = v) {
             this.doUpdate();
-        }            
+        }
     }
 
     destroy() {
@@ -42,15 +42,17 @@ class OrbitCenterOverlayNode extends SvgOverlayNode {
 }
 
 class PathOverlayNode extends SvgOverlayNode {
-    constructor(overlay, points) {
+    // Changed: for new section
+    constructor(overlay, points, sectionPlaneHelper) {
         super(overlay, null);
         this._points = points;
         this.svgElem = overlay.create("path", {
             fill: "lightblue",
-            stroke: "lightblue",
-            "fill-opacity": 0.4,
+            stroke: "black",
+            "fill-opacity": 0.1,
             d: this.createPathAttribute()
-        });        
+        });
+        this.sectionPlaneHelper = sectionPlaneHelper;
     }
 
     createPathAttribute() {
@@ -68,10 +70,12 @@ class PathOverlayNode extends SvgOverlayNode {
     set points(p) {
         this._points = p;
         this.doUpdate();
-    } 
+    }
 
     doUpdate() {
         this.svgElem.setAttribute("d", this.createPathAttribute(this._points));
+        // Changed: for new section
+        this.svgElem.setAttribute("fill", this.sectionPlaneHelper.isSectionMoving ? "red" : "lightblue");
     }
 }
 
@@ -83,21 +87,21 @@ class PathOverlayNode extends SvgOverlayNode {
  * @class SvgOverlay
  */
 export class SvgOverlay {
-	constructor(domNode, camera) {
+    constructor(domNode, camera) {
         this.track = domNode;
         this.camera = camera;
 
         this.tmp = vec3.create();
 
-        let svg = this.svg = this.create("svg", {id:"viewerOverlay"}, {
+        let svg = this.svg = this.create("svg", { id: "viewerOverlay" }, {
             padding: 0,
             margin: 0,
             position: "absolute",
             zIndex: 10000,
             display: "block",
-        	"pointer-events": "none"
+            "pointer-events": "none"
         });
-        
+
         document.body.appendChild(svg);
 
         this.resize();
@@ -106,8 +110,8 @@ export class SvgOverlay {
             visibility: "hidden",
             r: 6,
             fill: "white",
-        	stroke: "black",
-        	"fill-opacity": 0.4
+            stroke: "black",
+            "fill-opacity": 0.4
         });
 
         // This is an array of elements that have methods to query their visibility
@@ -136,15 +140,16 @@ export class SvgOverlay {
         let s = elem.style;
         for (let [k, v] of Object.entries(style || {})) {
             s[k] = v;
-        }        
+        }
         if (this.svg) {
             this.svg.appendChild(elem);
         }
         return elem;
     }
 
-    createWorldSpacePolyline(points) {
-        let node = new PathOverlayNode(this, points);
+    createWorldSpacePolyline(points, sectionPlaneHelper) {
+        // Changed: for new section
+        let node = new PathOverlayNode(this, points, sectionPlaneHelper);
         this.nodes.push(node);
         return node;
     }
@@ -153,8 +158,8 @@ export class SvgOverlay {
         function getElementXY(e) {
             var x = 0, y = 0;
             while (e) {
-                x += (e.offsetLeft-e.scrollLeft);
-                y += (e.offsetTop-e.scrollTop);
+                x += (e.offsetLeft - e.scrollLeft);
+                y += (e.offsetTop - e.scrollTop);
                 e = e.offsetParent;
             }
 
@@ -164,7 +169,7 @@ export class SvgOverlay {
                 y: (y - bodyRect.top)
             };
         }
-        
+
         let svgStyle = this.svg.style;
         var xy = getElementXY(this.track);
         svgStyle.left = xy.x + "px";
@@ -176,7 +181,7 @@ export class SvgOverlay {
         this.svg.setAttribute("viewBox", "0 0 " + this.w + " " + this.h);
         this.w /= 2.;
         this.h /= 2.;
-        
+
         this.aspect = this.w / this.h;
     }
 }
