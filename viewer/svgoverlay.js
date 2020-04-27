@@ -26,6 +26,7 @@ export class SvgOverlay {
         	"pointer-events": "none"
         });
         
+        // Changed: because of z-index problems
         const wrapper = document.getElementsByTagName("kros-bim-view")[0];
         (wrapper ? wrapper : document.body).appendChild(svg);
         this.hasWrapper = !!wrapper;
@@ -88,6 +89,7 @@ export class SvgOverlay {
         
         let svgStyle = this.svg.style;
 
+        // Changed: because of z-index problems
         if (!this.hasWrapper) {
             var xy = getElementXY(this.track);
             svgStyle.left = xy.x + "px";
