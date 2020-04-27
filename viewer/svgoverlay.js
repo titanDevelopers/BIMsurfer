@@ -19,12 +19,16 @@ export class SvgOverlay {
             padding: 0,
             margin: 0,
             position: "absolute",
+            top: 0,
+            left: 0,
             zIndex: 10000,
             display: "block",
         	"pointer-events": "none"
         });
         
-        document.body.appendChild(svg);
+        const wrapper = document.getElementsByTagName("kros-bim-view")[0];
+        (wrapper ? wrapper : document.body).appendChild(svg);
+        this.hasWrapper = !!wrapper;
 
         this.resize();
         this.camera.listeners.push(this.update.bind(this));
@@ -83,9 +87,13 @@ export class SvgOverlay {
         }
         
         let svgStyle = this.svg.style;
-        var xy = getElementXY(this.track);
-        svgStyle.left = xy.x + "px";
-        svgStyle.top = xy.y + "px";
+
+        if (!this.hasWrapper) {
+            var xy = getElementXY(this.track);
+            svgStyle.left = xy.x + "px";
+            svgStyle.top = xy.y + "px";
+        }
+
         svgStyle.width = (this.w = this.track.clientWidth) + "px";
         svgStyle.height = (this.h = this.track.clientHeight) + "px";
         this.svg.setAttribute("width", this.w);

@@ -1,6 +1,6 @@
 {
     "name": "@krosas/bimsurfer3",
-    "version": "0.237.3",
+    "version": "0.237.4",
     "description": "BIMsurferV3",
     "scripts": {
         "remove-package": "del *.tgz",
