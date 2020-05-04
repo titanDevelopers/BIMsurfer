@@ -773,7 +773,8 @@ export class RenderLayer {
 		}
 	}
 
-	renderSelectionOutlines(ids, width, node) {
+	// Changed: farba oramovania skrytich prvkov
+	renderSelectionOutlines(ids, width, transparentedOutlineColor, node) {
 		let bufferManager = (node || this).gpuBufferManager;
 
 		if (!bufferManager) {
@@ -798,7 +799,7 @@ export class RenderLayer {
 									// Kind of a dirty hack to only do the initialization once, we know the init result is the same for all buffers in this set, this improves the render speed when a lot of objects are selected
 									lines.renderStart(viewer, this);
 								}
-								lines.render(outlineColor, lines.matrixMap.get(id) || this.selectionOutlineMatrix, width || 0.005);
+								lines.render(transparentedOutlineColor || outlineColor, lines.matrixMap.get(id) || this.selectionOutlineMatrix, width || 0.005);
 								lastLineRenderer = lines;
 							}
 						}
