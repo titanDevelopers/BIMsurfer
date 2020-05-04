@@ -30,6 +30,9 @@ import { SectionPlaneHelper } from "./sectionplanehelper.js";
 // set to 1.
 const OVERRIDE_FLAG = (1 << 30);
 
+// Changed: farba oramovania skrytich prvkov
+const transparentedOutlineColor = new Float32Array([0.725, 0.102, 0.2, 1.0]);
+
 /**
  * The idea is that this class doesn't know anything about BIMserver, and can possibly be reused in classes other than BimServerViewer
  * 
@@ -164,6 +167,9 @@ export class Viewer {
 
         this.selectedElements = new FreezableSet(this.uniqueIdCompareFunction);
 
+        // Changed: zvyraznenie prvkov
+        this.highlightedElements = new FreezableSet();
+
         this.useOrderIndependentTransparency = this.settings.realtimeSettings.orderIndependentTransparency;
 
         // 0 -> Not dirty, 1 -> Kinda dirty, but rate-limit the repaints to 2/sec, 2 -> Really dirty, repaint ASAP
@@ -233,6 +239,15 @@ export class Viewer {
 
             return Promise.resolve();
         });
+    }
+
+    // Changed: zvyraznenie prvkov
+    setHighlight(elems, value) {
+        let fn = (value ? this.highlightedElements.add : this.highlightedElements.delete).bind(this.highlightedElements);
+        for (let e of elems) {
+            fn(e);
+        }
+        this.dirty = true;
     }
 
     setSelectionState(elems, selected, clear) {
@@ -619,7 +634,8 @@ export class Viewer {
         // Selection outlines require face culling to be disabled.
         gl.disable(gl.CULL_FACE);
 
-        if (this.selectedElements.size > 0) {
+        // Changed: zvyraznenie prvkov
+        if (this.selectedElements.size > 0 || this.highlightedElements.size > 0) {
             gl.enable(gl.STENCIL_TEST);
             gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
             gl.stencilFunc(gl.ALWAYS, 1, 0xff);
@@ -629,6 +645,7 @@ export class Viewer {
             gl.colorMask(false, false, false, false);
 
             this.internalRender({ with: this.selectedElements, pass: 'stencil' });
+            this.internalRender({ with: this.highlightedElements, pass: 'stencil' });
 
             gl.stencilFunc(gl.NOTEQUAL, 1, 0xff);
             gl.stencilMask(0x00);
@@ -636,12 +653,14 @@ export class Viewer {
 
             for (var renderLayer of this.renderLayers) {
                 renderLayer.renderSelectionOutlines(this.selectedElements);
+                renderLayer.renderSelectionOutlines(this.highlightedElements, 0.001, transparentedOutlineColor);
             }
 
             gl.disable(gl.STENCIL_TEST);
 
             for (var renderLayer of this.renderLayers) {
                 renderLayer.renderSelectionOutlines(this.selectedElements, 0.001);
+                renderLayer.renderSelectionOutlines(this.highlightedElements, 0.001, transparentedOutlineColor);
             }
         }
 
