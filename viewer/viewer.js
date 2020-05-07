@@ -168,7 +168,7 @@ export class Viewer {
         this.selectedElements = new FreezableSet(this.uniqueIdCompareFunction);
 
         // Changed: zvyraznenie prvkov
-        this.highlightedElements = new FreezableSet();
+        this.highlightedElements = new FreezableSet(this.uniqueIdCompareFunction);
 
         this.useOrderIndependentTransparency = this.settings.realtimeSettings.orderIndependentTransparency;
 
