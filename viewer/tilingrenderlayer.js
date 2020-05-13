@@ -182,7 +182,8 @@ export class TilingRenderLayer extends RenderLayer {
 		}
 	}
 	
-	renderBuffers(transparency, reuse, visibleElements) {
+	// Changed: oprava chyby - do visibleElements prisla hodnota false
+	renderBuffers(transparency, reuse, lines, visibleElements) {
 		// TODO when navigation is active (rotating, panning etc...), this would be the place to decide to for example not-render anything in this layer, or maybe apply more aggressive culling
 		// if (this.viewer.navigationActive) {
 		// 	return;
