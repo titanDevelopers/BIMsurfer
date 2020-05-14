@@ -316,14 +316,15 @@ export class BimServerViewer extends AbstractViewer {
                 includeAllSubTypes: true,
                 exclude: this.settings.excludedTypes
             },
-            tiles: {
-                ids: [0],
-                densityLowerThreshold: this.densityThreshold,
-                densityUpperThreshold: -1,
-                reuseLowerThreshold: -1,
-                geometryDataToReuse: this.geometryDataIdsToReuse ? Array.from(this.geometryDataIdsToReuse) : null,
-                maxDepth: 0
-            },
+            // Changed: pri porovnani zobrazime iba vymazane prvky
+            // tiles: {
+            //     ids: [0],
+            //     densityLowerThreshold: this.densityThreshold,
+            //     densityUpperThreshold: -1,
+            //     reuseLowerThreshold: -1,
+            //     geometryDataToReuse: this.geometryDataIdsToReuse ? Array.from(this.geometryDataIdsToReuse) : null,
+            //     maxDepth: 0
+            // },
             include: {
                 type: "IfcProduct",
                 field: "geometry",
