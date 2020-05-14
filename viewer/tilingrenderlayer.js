@@ -388,13 +388,12 @@ export class TilingRenderLayer extends RenderLayer {
 		}, false);
 	}
 
-	// Changed: farba oramovania skrytich prvkov
-	renderSelectionOutlines(ids, width, transparentedOutlineColor) {
+	renderSelectionOutlines(ids, width) {
 		for (var oid of ids) {
 			// TODO this is already much more efficient than iterating over all octree nodes, but can be made more efficient for large selections by first 
 			// organizing the oid's per node
 			var viewObject = this.viewer.getViewObject(oid);
-			super.renderSelectionOutlines(ids, width, transparentedOutlineColor, viewObject.node);
+			super.renderSelectionOutlines(ids, width, viewObject.node);
 		}
 	}
 	
